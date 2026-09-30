@@ -124,6 +124,87 @@ and microphone access. ~40 subscribers at $1/month just to cover certificates.
 
 ---
 
+## Distribution — what shipping to other people actually requires
+
+Measured 2026-09-30. Signing is the cheap part; the dependencies are the problem.
+
+### 1. Code signing and notarization — $99/year
+
+| | |
+|---|---|
+| Apple Developer Program | **$99/year** |
+| Developer ID certificate | included |
+| Notarization | included, but requires the **hardened runtime** |
+
+Without it Gatekeeper blocks the app outright. For something asking to record
+your screen and listen to your microphone, a "this app cannot be opened"
+warning on first run is fatal — that is precisely the moment a student decides
+whether to trust it.
+
+**It is not only about warnings.** macOS binds Screen Recording and Microphone
+grants to the code signature. Ad-hoc signing changes identity on every build, so
+**every update silently revokes both permissions** and the user has to re-grant
+them by hand. A stable Developer ID is what makes updates survivable. We hit
+this locally and worked around it with a self-signed certificate
+(`npm run setup:cert`), which fixes one machine and nothing else.
+
+Note: the hardened runtime also means **every nested binary must be signed** —
+`ffmpeg`, `whisper-cli`, `whisper-server`, and the Node runtime. Not just the
+app.
+
+### 2. Size — what a user does not already have
+
+| Component | Size |
+|---|---|
+| Node runtime | ~110 MB (single binary; 567 MB as an nvm install) |
+| whisper models | **221 MB** |
+| whisper binaries | 7 MB |
+| ffmpeg | bundled, see licence below |
+| glance itself | ~100 KB |
+
+Roughly **350 MB+** before the model path. Mitigation: ship the app small and
+download models on first run, which is also what makes `tiny.en` (74 MB) worth
+settling.
+
+### 3. The Claude CLI dependency is the real cliff
+
+glance shells out to `claude -p`. A user must have Claude Code **installed and
+logged in** before glance does anything at all. That is a 221 MB download and an
+OAuth flow standing between "downloaded glance" and "asked a question".
+
+This is the weakest point in the whole product, and it lands directly on the
+$1/month premise — the pitch is "you already pay for Claude", but the install
+still assumes a developer tool the target audience has never heard of.
+
+Two ways out, neither free:
+
+- **Ship the API path instead.** One key, no CLI, no 221 MB. But then the user
+  pays per glance and the "they already pay for Claude" story disappears.
+- **Bundle or automate the CLI install.** Bigger download, and it inherits the
+  open licensing question above.
+
+### 4. ffmpeg is GPL as installed
+
+The local build reports `--enable-gpl`. Redistributing that binary would impose
+GPL terms on the combined work. Fixable, but deliberately: ship an
+LGPL-configured ffmpeg build, or drop ffmpeg for capture and use AVFoundation
+directly from the Swift app, which removes the dependency altogether.
+
+### 5. The Mac App Store is probably not an option
+
+Sandboxing blocks the global hotkey and the subprocess model that glance is
+built on. Direct download (signed `.dmg`) or a Homebrew cask are the realistic
+channels.
+
+### Recommended shape, when the time comes
+
+1. Signed, notarized `.dmg`, direct download
+2. Models fetched on first run, not bundled
+3. ffmpeg replaced by native AVFoundation capture — removes the licence problem
+   and a dependency at once
+4. API key as the default path, subscription as the advanced option — inverting
+   today's default, because it removes the 221 MB prerequisite
+
 ## Housekeeping
 
 - **The repo has no commits.** Three phases and five fixed bugs of untracked work.

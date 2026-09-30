@@ -20,7 +20,8 @@
     "setup": "npm install && npm run build && npm run setup:hotkey && npm run setup:whisper && npm run setup:models && npm run doctor",
     "setup:hotkey": "bash scripts/build-app.sh",
     "agent:install": "bash scripts/install-agent.sh",
-    "agent:uninstall": "bash scripts/uninstall-agent.sh"
+    "agent:uninstall": "bash scripts/uninstall-agent.sh",
+    "setup:cert": "bash scripts/make-signing-cert.sh"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.70.0"

@@ -9,6 +9,20 @@
 import CoreGraphics
 import Foundation
 
+// `--check-screen` reports whether THIS process can capture the screen.
+//
+// Worth a flag of its own because Screen Recording is granted per application,
+// and a denied screencapture does not fail — it silently returns the desktop
+// wallpaper with no windows in it. glance then describes an empty desktop with
+// complete confidence. An explicit preflight turns that into an error.
+//
+// It must run inside the process that will capture, so that it reports the
+// app's grant rather than the terminal's.
+if CommandLine.arguments.contains("--check-screen") {
+    print(CGPreflightScreenCaptureAccess() ? "granted" : "denied")
+    exit(0)
+}
+
 // Global coordinates, top-left origin — the same space as CGDisplayBounds.
 let mouse = CGEvent(source: nil)?.location ?? .zero
 

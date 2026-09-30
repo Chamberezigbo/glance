@@ -83,6 +83,7 @@ final class App: NSObject, NSApplicationDelegate {
         log("repo root: \(repoRoot)")
         registerHotKey()
         requestMicrophoneAccess()
+        checkScreenAccess()
     }
 
     /// Ask for the microphone up front, rather than letting the first ⌥Space
@@ -105,6 +106,32 @@ final class App: NSObject, NSApplicationDelegate {
         default:
             log("microphone: denied")
             warnNoMic()
+        }
+    }
+
+    /// Screen Recording, asked for up front.
+    ///
+    /// Unlike the microphone this cannot be granted and used in the same
+    /// session: macOS requires the application to be restarted before a new
+    /// grant takes effect. So the message says so rather than implying it will
+    /// start working on its own.
+    private func checkScreenAccess() {
+        if CGPreflightScreenCaptureAccess() {
+            log("screen recording: granted")
+            return
+        }
+        log("screen recording: denied")
+        CGRequestScreenCaptureAccess()
+        DispatchQueue.main.async {
+            let a = NSAlert()
+            a.messageText = "glance needs to record the screen"
+            a.informativeText = "Without this glance receives a picture of your empty desktop rather than your windows, and will answer as though nothing is open.\n\nSwitch glance on under Screen Recording, then quit and reopen glance — macOS does not apply this permission until the app restarts."
+            a.addButton(withTitle: "Open Settings")
+            a.addButton(withTitle: "Later")
+            if a.runModal() == .alertFirstButtonReturn,
+               let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+                NSWorkspace.shared.open(url)
+            }
         }
     }
 
@@ -217,6 +244,18 @@ final class App: NSObject, NSApplicationDelegate {
             NSSound.beep()
         }
     }
+}
+
+// Refuse to start if another copy is already running.
+//
+// launchd's kickstart can leave the previous process alive, and every survivor
+// puts another icon in the menu bar and competes for the same hotkey. Better to
+// exit quietly than to duplicate.
+let running = NSRunningApplication.runningApplications(withBundleIdentifier: "com.glance.app")
+    .filter { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier }
+if !running.isEmpty {
+    FileHandle.standardError.write("glance: another instance is already running, exiting\n".data(using: .utf8)!)
+    exit(0)
 }
 
 let app = NSApplication.shared

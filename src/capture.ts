@@ -118,6 +118,23 @@ export function sessionDir(): string {
   return dir;
 }
 
+/**
+ * Can this process actually capture the screen?
+ *
+ * Returns null when the helper is not built, so a missing binary does not block
+ * a working setup.
+ */
+export async function screenAccess(): Promise<boolean | null> {
+  const bin = join(repoRoot, "bin/cursor-display");
+  if (!existsSync(bin)) return null;
+  try {
+    const { stdout } = await run(bin, ["--check-screen"]);
+    return stdout.trim() === "granted";
+  } catch {
+    return null;
+  }
+}
+
 export interface Capture {
   path: string;
   /** The screencapture -D index actually used. */
@@ -150,6 +167,13 @@ export async function capture(opts: {
   width: number;
   dir: string;
 }): Promise<Capture> {
+  if ((await screenAccess()) === false) {
+    throw new Error(
+      "No Screen Recording permission, so the screenshot would show an empty desktop.\n" +
+      "Grant it in System Settings > Privacy & Security > Screen Recording, then\n" +
+      "restart glance: launchctl kickstart -k gui/$UID/com.glance.agent",
+    );
+  }
   const display = await resolveDisplay(opts.display);
   const raw = join(opts.dir, "shot.jpg");
   const small = join(opts.dir, "shot-small.jpg");
