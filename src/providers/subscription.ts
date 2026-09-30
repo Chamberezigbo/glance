@@ -3,6 +3,7 @@ import { promisify } from "node:util";
 import { dirname, basename } from "node:path";
 import { findClaudeCli } from "../config.js";
 import { systemPrompt } from "../prompt.js";
+import { sessionDir } from "../capture.js";
 import type { GlanceRequest, GlanceResult, Provider, TokenUsage } from "./types.js";
 
 const run = promisify(execFile);
@@ -31,21 +32,29 @@ export class SubscriptionProvider implements Provider {
   }
 
   async ask(req: GlanceRequest): Promise<GlanceResult> {
-    // Run in the image's own directory and refer to it by bare filename, so the
-    // agent's Read tool resolves it without needing a broader permission scope.
-    const cwd = dirname(req.imagePath);
-    const file = basename(req.imagePath);
+    const resuming = req.resume?.kind === "claude-session" ? req.resume.id : null;
 
-    const prompt =
-      `${systemPrompt(req.maxWords)}\n\n` +
-      `Read the image file ${file} in the current directory. That image is the user's screen.\n\n` +
-      `The user asks: ${req.question}`;
+    // Run in the session directory so Claude Code keys one history for all
+    // glances, and refer to the image by bare filename so the Read tool
+    // resolves it without a broader permission scope.
+    const cwd = req.imagePath ? dirname(req.imagePath) : sessionDir();
+
+    const prompt = resuming
+      // The image is already in this conversation. Saying so explicitly stops
+      // the model reaching for the Read tool again, which would cost a turn.
+      ? `Still about the same screenshot, which you have already seen — do not read it again.\n\n` +
+        `Answer in under ${req.maxWords} words, as plain spoken prose with no lists.\n\n` +
+        `The user asks: ${req.question}`
+      : `${systemPrompt(req.maxWords)}\n\n` +
+        `Read the image file ${basename(req.imagePath!)} in the current directory. That image is the user's screen.\n\n` +
+        `The user asks: ${req.question}`;
 
     const t0 = performance.now();
     const { stdout } = await run(
       this.bin,
       [
         "-p", prompt,
+        ...(resuming ? ["--resume", resuming] : []),
         "--model", this.model,
         "--allowedTools", "Read",
         "--permission-mode", "acceptEdits",
@@ -89,6 +98,9 @@ export class SubscriptionProvider implements Provider {
       usage,
       // Reported by the CLI, but it is subscription usage, not a bill.
       costUsd: undefined,
+      session: parsed.session_id
+        ? { kind: "claude-session", id: String(parsed.session_id) }
+        : undefined,
     };
   }
 }

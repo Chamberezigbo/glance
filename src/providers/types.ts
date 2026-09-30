@@ -14,11 +14,22 @@ export type ProviderName = "subscription" | "api";
 export interface GlanceRequest {
   /** What the user asked. */
   question: string;
-  /** Absolute path to the already-downscaled screenshot. */
-  imagePath: string;
-  /** Hard cap on answer length. At ~3.1 words/sec spoken, this is a time budget. */
+  /**
+   * Absolute path to the already-downscaled screenshot.
+   *
+   * Omitted on a follow-up: the image is already in the conversation, and
+   * re-sending it would defeat the point.
+   */
+  imagePath?: string;
+  /** Hard cap on answer length. At ~2.9 words/sec spoken, this is a time budget. */
   maxWords: number;
+  /** Continue an existing conversation rather than starting one. */
+  resume?: SessionRef;
 }
+
+export type SessionRef =
+  | { kind: "claude-session"; id: string }
+  | { kind: "messages"; messages: unknown[] };
 
 export interface TokenUsage {
   input: number;
@@ -38,6 +49,8 @@ export interface GlanceResult {
   usage: TokenUsage;
   /** Only the API path has a meaningful marginal cost. */
   costUsd?: number;
+  /** Pass to a later request to continue this conversation. */
+  session?: SessionRef;
 }
 
 export interface Provider {

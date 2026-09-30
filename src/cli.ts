@@ -8,6 +8,7 @@ import { doctor } from "./doctor.js";
 import { speak, bestVoice } from "./speak.js";
 import { listen, setState, calibrate } from "./listen.js";
 import { greet, greetingText } from "./greet.js";
+import * as session from "./session.js";
 
 const USAGE = `
 glance — ask a question about what is on your screen
@@ -32,6 +33,11 @@ Options
                                  the monitor your mouse is on)
   --width <px>                   downscale width (default: 1024)
   --max-words <n>                cap the answer (default: 45, ~15s spoken)
+  --follow, -f                   continue the last conversation without taking
+                                 a new screenshot. Roughly half the tokens and
+                                 a third of the time
+  --new                          force a fresh screenshot, ignoring any
+                                 conversation in progress
   --listen                       record the question from the mic instead of
                                  typing it; stops when you stop talking
   --whisper <base|tiny>          transcription model (default: base, more
@@ -50,6 +56,8 @@ interface Args {
   keep: boolean;
   listen: boolean;
   whisper: "base" | "tiny";
+  follow: boolean;
+  fresh: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -60,6 +68,8 @@ function parseArgs(argv: string[]): Args {
   let keep = false;
   let doListen = false;
   let whisper: "base" | "tiny" = "base";
+  let follow = false;
+  let fresh = false;
 
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
@@ -78,6 +88,8 @@ function parseArgs(argv: string[]): Args {
       case "--speak": doSpeak = true; break;
       case "--no-speak": noSpeak = true; break;
       case "--listen": case "-l": doListen = true; break;
+      case "--follow": case "-f": follow = true; break;
+      case "--new": fresh = true; break;
       case "--whisper": whisper = next() as "base" | "tiny"; break;
       case "--verbose": case "-v": cfg.verbose = true; break;
       case "--keep": keep = true; break;
@@ -88,7 +100,7 @@ function parseArgs(argv: string[]): Args {
   // Asking out loud implies wanting the answer out loud — it is a conversation,
   // not a dictation box. --no-speak opts back out.
   const speak = noSpeak ? false : doSpeak || doListen;
-  return { question: words.join(" "), cfg, speak, keep, listen: doListen, whisper };
+  return { question: words.join(" "), cfg, speak, keep, listen: doListen, whisper, follow, fresh };
 }
 
 async function main(): Promise<number> {
@@ -119,7 +131,7 @@ async function main(): Promise<number> {
     return argv.length === 0 ? 1 : 0;
   }
 
-  const { question: typed, cfg: overrides, speak: doSpeak, keep, listen: doListen, whisper } = parseArgs(argv);
+  const { question: typed, cfg: overrides, speak: doSpeak, keep, listen: doListen, whisper, follow, fresh } = parseArgs(argv);
   if (!typed && !doListen) {
     console.error("glance: no question given.\n" + USAGE);
     return 1;
@@ -130,6 +142,21 @@ async function main(): Promise<number> {
   const dir = sessionDir();
   const t0 = performance.now();
   let heard: Awaited<ReturnType<typeof listen>> | null = null;
+
+  // Decide up front whether this continues the last conversation. --new always
+  // wins; otherwise --follow asks for it, and the hotkey path infers it from how
+  // recently the last answer finished.
+  const prior = session.load();
+  const canResume = !fresh && session.isUsable(prior, cfg);
+  const resuming = canResume && (follow || (doListen && session.inFollowWindow(prior)));
+
+  if (follow && !canResume && !fresh) {
+    console.error(
+      prior
+        ? "glance: that conversation is too old to continue — taking a new screenshot."
+        : "glance: no conversation to follow up on — taking a new screenshot.",
+    );
+  }
 
   try {
     let question = typed;
@@ -153,12 +180,28 @@ async function main(): Promise<number> {
       console.error(`glance: ${cfg.provider} (${cfg.providerReason}), model ${cfg.model}`);
     }
 
-    const shot = await capture({ display: cfg.display, width: cfg.width, dir });
+    // The whole point of a follow-up: do not capture again.
+    const shot = resuming
+      ? null
+      : await capture({ display: cfg.display, width: cfg.width, dir });
+
     const result = await provider.ask({
       question,
-      imagePath: shot.path,
+      imagePath: shot?.path,
       maxWords: cfg.maxWords,
+      resume: resuming ? prior!.ref : undefined,
     });
+
+    if (result.session) {
+      session.save({
+        provider: cfg.provider,
+        model: cfg.model,
+        ref: result.session,
+        capturedAt: resuming ? prior!.capturedAt : Date.now(),
+        lastAnswerAt: Date.now(),
+        turns: (resuming ? prior!.turns : 0) + 1,
+      });
+    }
 
     console.log(result.answer);
 
@@ -185,8 +228,10 @@ async function main(): Promise<number> {
           ? `\n  recorded  ${heard.audioSec.toFixed(1)}s of audio` +
             `\n  heard     ${(heard.transcribeMs / 1000).toFixed(1)}s  (whisper ${heard.model}, ${heard.warm ? "resident" : "cold spawn"})`
           : "") +
-        `\n  capture   ${shot.captureMs.toFixed(0)}ms  (display ${shot.display}, ${shot.width}x${shot.height}, ${(shot.bytes / 1024).toFixed(0)}KB)` +
-        `\n  scale     ${shot.scaleMs.toFixed(0)}ms` +
+        (shot
+          ? `\n  capture   ${shot.captureMs.toFixed(0)}ms  (display ${shot.display}, ${shot.width}x${shot.height}, ${(shot.bytes / 1024).toFixed(0)}KB)` +
+            `\n  scale     ${shot.scaleMs.toFixed(0)}ms`
+          : `\n  capture   skipped — follow-up on the earlier screenshot (turn ${(prior?.turns ?? 0) + 1})`) +
         `\n  model     ${(result.ms / 1000).toFixed(1)}s  ${result.usage.total.toLocaleString()} tokens` +
         ` (in ${result.usage.input}, out ${result.usage.output}, cache r${result.usage.cacheRead}/w${result.usage.cacheCreation})` +
         (result.costUsd !== undefined ? `  $${result.costUsd.toFixed(4)}` : "") +
@@ -195,7 +240,7 @@ async function main(): Promise<number> {
         `\n  total     ${(total / 1000).toFixed(1)}s`,
       );
     }
-    if (keep) console.error(`\nscreenshot: ${shot.path}`);
+    if (keep && shot) console.error(`\nscreenshot: ${shot.path}`);
     return 0;
   } catch (err) {
     console.error(`glance: ${err instanceof Error ? err.message : String(err)}`);

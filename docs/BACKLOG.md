@@ -6,9 +6,10 @@ Last updated 2026-09-30. Detail lives in [PLAN.md](PLAN.md) and
 [phase0-findings.md](phase0-findings.md); this file is the index and the reason
 each item is waiting.
 
-**Built so far:** Phases 0-3. Typed and spoken questions, screen capture on the
+**Built so far:** Phases 0-4. Typed and spoken questions, screen capture on the
 monitor the mouse is on, spoken answers, two global hotkeys, a menu-bar daemon
-that starts at login, and a resident whisper server.
+that starts at login, a resident whisper server, follow-up questions that reuse
+the last screenshot, and a spoken greeting at login and unlock.
 
 ---
 
@@ -55,15 +56,6 @@ below resolves badly.
 ---
 
 ## Planned, not started
-
-### Phase 4 — Follow-ups
-
-"What about the button on the left?" should reuse the screenshot already in the
-conversation rather than capturing a new one.
-
-**Now much cheaper than planned.** Screenshots moved to a stable
-`~/.glance/session`, so Claude Code already keeps one session history instead of
-one orphaned project folder per glance. Resuming is close to a flag.
 
 ### Phase 5 — Burst mode
 

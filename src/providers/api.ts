@@ -26,7 +26,39 @@ export class ApiProvider implements Provider {
   }
 
   async ask(req: GlanceRequest): Promise<GlanceResult> {
-    const image = await readFile(req.imagePath);
+    // On a follow-up the image is already in the replayed history, so only the
+    // new question is appended. Prompt caching then makes the repeat cheap.
+    const prior =
+      req.resume?.kind === "messages"
+        ? (req.resume.messages as Anthropic.MessageParam[])
+        : [];
+
+    let turn: Anthropic.MessageParam;
+    if (prior.length > 0) {
+      turn = { role: "user", content: userPrompt(req.question) };
+    } else {
+      if (!req.imagePath) throw new Error("A first question needs a screenshot.");
+      const image = await readFile(req.imagePath);
+      turn = {
+        role: "user",
+        content: [
+          {
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: "image/jpeg",
+              data: image.toString("base64"),
+            },
+            // Cache the image: it is the expensive part and it never changes
+            // within one conversation.
+            cache_control: { type: "ephemeral" },
+          },
+          { type: "text", text: userPrompt(req.question) },
+        ],
+      };
+    }
+
+    const messages = [...prior, turn];
 
     const t0 = performance.now();
     const res = await this.client.messages.create({
@@ -34,22 +66,7 @@ export class ApiProvider implements Provider {
       // Generous ceiling; the word cap in the prompt is what actually binds.
       max_tokens: 512,
       system: systemPrompt(req.maxWords),
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "image",
-              source: {
-                type: "base64",
-                media_type: "image/jpeg",
-                data: image.toString("base64"),
-              },
-            },
-            { type: "text", text: userPrompt(req.question) },
-          ],
-        },
-      ],
+      messages,
     });
     const ms = performance.now() - t0;
 
@@ -68,6 +85,17 @@ export class ApiProvider implements Provider {
     };
     usage.total = usage.input + usage.output + usage.cacheRead + usage.cacheCreation;
 
-    return { answer, provider: this.name, model: this.model, ms, usage };
+    return {
+      answer,
+      provider: this.name,
+      model: this.model,
+      ms,
+      usage,
+      // Carry the whole exchange forward, so the next question can resume it.
+      session: {
+        kind: "messages",
+        messages: [...messages, { role: "assistant", content: answer }],
+      },
+    };
   }
 }

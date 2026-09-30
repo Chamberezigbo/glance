@@ -192,7 +192,7 @@ server cannot start.
 
 ---
 
-## Phase 4 — Follow-ups
+## Phase 4 — Follow-ups — ✅ COMPLETE
 
 Most questions are follow-ups: "what about the button on the left?" These
 must reuse the screenshot already in the conversation instead of capturing a
@@ -200,7 +200,39 @@ new one. Use Claude Code's session resume; prompt caching makes the repeat
 cheap.
 
 **Done when:** a three-question exchange about one screen takes one capture,
-not three.
+not three. ✅
+
+Measured on the subscription path:
+
+| | Tokens | Time | Captured |
+|---|---|---|---|
+| First question | 59,584 | 18.5 s | yes |
+| **Follow-up** | **30,896** | **12.3 s** | **no** |
+
+About half the tokens and a third less time, and the answer was demonstrably
+about the *original* screenshot — asked what was on the far left, it described
+the Explorer sidebar from the earlier frame.
+
+### How a follow-up is chosen
+
+- `--follow` / `-f` from the terminal.
+- From the hotkey, pressing ⌥Space within 45 s of an answer continues the
+  conversation. No second chord to learn, and the menu-bar icon fills in
+  (`eye.fill`) while that window is open so it is visible rather than guessed at.
+- `--new`, or **New conversation** in the menu, forces a fresh capture.
+
+### Staleness is the thing worth getting right
+
+A conversation expires **5 minutes** after its screenshot was taken. Past that,
+`--follow` refuses and captures again.
+
+This matters more than the token saving. An answer drawn from a screen the user
+has already navigated away from is not a slightly stale answer — it is a
+confident, fluent, wrong one, and nothing in the output would hint at it. Better
+to spend a capture.
+
+The session also invalidates if the provider or model changes, since neither
+handle can be replayed against the other.
 
 ---
 

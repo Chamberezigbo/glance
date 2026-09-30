@@ -14,22 +14,26 @@ import Carbon.HIToolbox
 import AVFoundation
 
 enum State: String {
-    case idle, listening, thinking, speaking
+    case idle, listening, thinking, speaking, followable
 
     var symbol: String {
         switch self {
-        case .idle:      return "eye"
-        case .listening: return "waveform"
-        case .thinking:  return "ellipsis.circle"
-        case .speaking:  return "speaker.wave.2"
+        case .idle:       return "eye"
+        case .listening:  return "waveform"
+        case .thinking:   return "ellipsis.circle"
+        case .speaking:   return "speaker.wave.2"
+        // Filled, so a follow-up window is visible at a glance without being
+        // a different shape to learn.
+        case .followable: return "eye.fill"
         }
     }
     var label: String {
         switch self {
-        case .idle:      return "glance — idle"
-        case .listening: return "glance — listening"
-        case .thinking:  return "glance — thinking"
-        case .speaking:  return "glance — speaking"
+        case .idle:       return "glance — idle"
+        case .listening:  return "glance — listening"
+        case .thinking:   return "glance — thinking"
+        case .speaking:   return "glance — speaking"
+        case .followable: return "glance — press ⌥Space again to follow up on the same screen"
         }
     }
 }
@@ -71,6 +75,7 @@ final class App: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Ask out loud", action: #selector(trigger), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Type a question…", action: #selector(askTyped), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "New conversation", action: #selector(newConversation), keyEquivalent: ""))
         menu.addItem(.separator())
         for text in ["⌥Space — ask out loud", "⌥⇧Space — type a question"] {
             let hint = NSMenuItem(title: text, action: nil, keyEquivalent: "")
@@ -192,6 +197,22 @@ final class App: NSObject, NSApplicationDelegate {
         }
     }
 
+    private var followTimer: Timer?
+
+    /// Hold a "you can follow up" icon for as long as the CLI will treat the
+    /// next press as a continuation. Kept in sync with GLANCE_FOLLOW_MS.
+    private func showFollowWindow() {
+        let seconds = Double(ProcessInfo.processInfo.environment["GLANCE_FOLLOW_MS"]
+            .flatMap { Double($0) }.map { $0 / 1000 } ?? 45)
+        setState(.followable)
+        DispatchQueue.main.async { [weak self] in
+            self?.followTimer?.invalidate()
+            self?.followTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
+                self?.setState(.idle)
+            }
+        }
+    }
+
     private func log(_ msg: String) {
         FileHandle.standardError.write("glance: \(msg)\n".data(using: .utf8)!)
     }
@@ -258,6 +279,16 @@ final class App: NSObject, NSApplicationDelegate {
         run(command: "./bin/glance-run --ask '\(escaped)'", listening: false)
     }
 
+    /// Drop the current conversation, so the next question captures afresh.
+    @objc func newConversation() {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/bash")
+        task.arguments = ["-lc", "cd '\(repoRoot)' && rm -f \"$HOME/.glance/session/conversation.json\""]
+        try? task.run()
+        followTimer?.invalidate()
+        setState(.idle)
+    }
+
     @objc func trigger() {
         // One at a time. A second press mid-answer would talk over the first.
         guard !running else { NSSound.beep(); return }
@@ -277,9 +308,12 @@ final class App: NSObject, NSApplicationDelegate {
         // cut off mid-sentence even when the recording is fine.
         startWatchingState()
         task.terminationHandler = { [weak self] _ in
-            self?.running = false
-            DispatchQueue.main.async { self?.stateTimer?.invalidate() }
-            self?.setState(.idle)
+            guard let self else { return }
+            self.running = false
+            DispatchQueue.main.async { self.stateTimer?.invalidate() }
+            // Most questions are follow-ups about the same screen, so show that
+            // the conversation is still open rather than making people guess.
+            self.showFollowWindow()
         }
         do { try task.run() } catch {
             running = false
