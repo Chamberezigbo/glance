@@ -1,7 +1,8 @@
 import { spawn, execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { promisify } from "node:util";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -74,11 +75,29 @@ export interface RecordOptions {
  * silence that follows actual speech — otherwise the pause before someone
  * starts talking ends the recording immediately.
  */
+/**
+ * Note on tuning: speech recorded from a nearby mouth sits far above room noise,
+ * but speech played through speakers and picked up across a room does not — it
+ * lands only ~10 dB above ambient, which is not enough separation for
+ * silencedetect to work. That makes loopback testing unreliable, and means
+ * these values can only really be judged with a real voice.
+ */
 export async function record(opts: RecordOptions): Promise<number> {
   const { outPath } = opts;
-  const silenceSec = opts.silenceSec ?? 1.2;
-  const noiseDb = opts.noiseDb ?? -35;
-  const maxSec = opts.maxSec ?? 30;
+  // Tuned after real use. 1.2s cut people off mid-sentence: an ordinary pause
+  // for breath or thought is longer than that, and -35dB treated a quiet
+  // trailing word as silence. Ending a question early is far worse than waiting
+  // an extra second, because the whole round trip is then wasted.
+  const cal = loadCalibration();
+  const silenceSec = opts.silenceSec ?? Number(process.env.GLANCE_SILENCE ?? 1.8);
+  // Measured on the target machine: ambient sits near -39 dB and speech near
+  // -29 dB, so the threshold has to land between them. -42 was below even the
+  // silence, so no pause ever counted and recording ran to the cap. `glance
+  // calibrate` measures the actual room, because 10 dB is not much margin.
+  const noiseDb = opts.noiseDb ?? Number(process.env.GLANCE_NOISE_DB ?? cal?.noiseDb ?? -33);
+  const maxSec = opts.maxSec ?? 45;
+  // Never stop in the first second, whatever the detector thinks.
+  const minSec = Number(process.env.GLANCE_MIN_SEC ?? 1.0);
 
   const mic = await findMic();
   opts.onStart?.(mic.name);
@@ -119,7 +138,7 @@ export async function record(opts: RecordOptions): Promise<number> {
         const at = Number(s[1]);
         // Silence starting after t=0 implies sound preceded it.
         if (at > 0.3) heardSpeech = true;
-        if (heardSpeech) stop();
+        if (heardSpeech && at >= minSec) stop();
       }
     });
 
@@ -248,6 +267,69 @@ export async function transcribe(
   return { text: stdout.trim().replace(/\s+/g, " "), ms: performance.now() - t0, warm: false };
 }
 
+interface Calibration { noiseDb: number; ambientDb: number; measuredAt: string; }
+
+function calibrationPath(): string {
+  return join(homedir(), ".glance", "calibration.json");
+}
+
+function loadCalibration(): Calibration | null {
+  try {
+    return JSON.parse(readFileSync(calibrationPath(), "utf8")) as Calibration;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Measure the room and pick a silence threshold that suits it.
+ *
+ * Speech sits only ~10 dB above ambient, so a default that works in a quiet
+ * room will either cut people off in a loud one or never stop in a quiet one.
+ * Sitting a few dB above the measured floor is far more reliable than guessing.
+ */
+export async function calibrate(seconds = 4): Promise<Calibration> {
+  const mic = await findMic();
+  // volumedetect writes to stderr and exits 0, so read stderr on BOTH paths.
+  let out = "";
+  try {
+    const res = await run("ffmpeg", [
+      "-nostdin", "-f", "avfoundation", "-i", `:${mic.index}`,
+      "-t", String(seconds), "-ar", "16000", "-ac", "1",
+      "-af", "volumedetect", "-f", "null", "-",
+    ]);
+    out = res.stderr ?? "";
+  } catch (e) {
+    out = String((e as { stderr?: string }).stderr ?? "");
+  }
+  const m = out.match(/mean_volume:\s*(-?[\d.]+) dB/);
+  if (!m) throw new Error("Could not measure the microphone level.");
+
+  const ambientDb = Number(m[1]);
+  // A few dB above the floor: high enough that room noise reads as silence,
+  // low enough that a quiet trailing word still reads as speech.
+  const noiseDb = Math.round((ambientDb + 6) * 10) / 10;
+  const cal: Calibration = { noiseDb, ambientDb, measuredAt: new Date().toISOString() };
+  mkdirSync(join(homedir(), ".glance"), { recursive: true });
+  writeFileSync(calibrationPath(), JSON.stringify(cal, null, 2));
+  return cal;
+}
+
+/** Where the daemon reads what glance is actually doing. */
+export function statePath(): string {
+  return join(homedir(), ".glance", "state");
+}
+
+/** Publish the current phase so the menu-bar icon can tell the truth. */
+export function setState(phase: "listening" | "thinking" | "speaking" | "idle"): void {
+  try {
+    mkdirSync(join(homedir(), ".glance"), { recursive: true });
+    writeFileSync(statePath(), phase);
+  } catch {
+    // Cosmetic only — never let a status write break a glance.
+  }
+}
+
 export async function listen(opts: {
   dir: string;
   model?: "base" | "tiny";
@@ -262,8 +344,11 @@ export async function listen(opts: {
   const warming = ensureServer(model).catch(() => false);
 
   const t0 = performance.now();
+  setState("listening");
   const audioSec = await record({ outPath: wav, onStart: opts.onStart });
   const recordMs = performance.now() - t0;
+  // Recording has genuinely stopped now — not five seconds after it started.
+  setState("thinking");
   opts.onRecorded?.(audioSec);
 
   await warming;

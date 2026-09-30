@@ -2,13 +2,15 @@
 # Launched by the menu-bar daemon.
 #   ./bin/glance-run                 -> ask out loud
 #   ./bin/glance-run --ask "..."     -> ask with a typed question
+#   ./bin/glance-run --greet         -> speak the login/unlock greeting
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 # launchd gives us a minimal PATH, so find node the way the user's shell would.
 export PATH="$HOME/.nvm/versions/node/$(ls "$HOME/.nvm/versions/node" 2>/dev/null | sort -V | tail -1)/bin:/usr/local/bin:/opt/homebrew/bin:$PATH"
 
-if [ "${1:-}" = "--ask" ] && [ -n "${2:-}" ]; then
-  exec node dist/cli.js --speak "$2" >> "$ROOT/glance.log" 2>&1
-fi
+case "${1:-}" in
+  --greet) exec node dist/cli.js greet >> "$ROOT/glance.log" 2>&1 ;;
+  --ask)   [ -n "${2:-}" ] && exec node dist/cli.js --speak "$2" >> "$ROOT/glance.log" 2>&1 ;;
+esac
 exec node dist/cli.js --listen >> "$ROOT/glance.log" 2>&1

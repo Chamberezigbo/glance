@@ -157,6 +157,24 @@ listening:
 A second press while busy beeps rather than starting a second run, so it cannot
 talk over itself.
 
+### Greeting on login and unlock
+
+A spoken welcome when you log in or unlock the screen, varied by time of day and
+using a name from `~/.glance/config.json`.
+
+Two details worth keeping:
+
+- **It listens for `com.apple.screenIsUnlocked`**, a distributed notification,
+  which needs no permission — the same reasoning that chose
+  `RegisterEventHotKey` over an event tap. glance still observes nothing.
+- **The name comes from config, not the OS.** The account's full name is often
+  not what someone wants said aloud, and the greeting runs under launchd, which
+  never sees the shell environment — so an exported variable would be silently
+  ignored.
+
+It will not greet twice within five minutes, so rebuilds and quick
+lock-unlock cycles stay quiet. `GLANCE_GREETING=0` disables it.
+
 ### Whisper is now resident
 
 `whisper-server` starts on demand and stays warm, which removes the cold-start

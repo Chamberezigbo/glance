@@ -6,7 +6,8 @@ import { capture, sessionDir } from "./capture.js";
 import { createProvider } from "./providers/index.js";
 import { doctor } from "./doctor.js";
 import { speak, bestVoice } from "./speak.js";
-import { listen } from "./listen.js";
+import { listen, setState, calibrate } from "./listen.js";
+import { greet, greetingText } from "./greet.js";
 
 const USAGE = `
 glance — ask a question about what is on your screen
@@ -15,6 +16,13 @@ glance — ask a question about what is on your screen
   glance --listen                             ask out loud, answer out loud
   glance --listen --no-speak                  ask out loud, answer as text
   glance doctor                               check this machine is set up
+  glance calibrate                            measure your room, so it stops
+                                              cutting you off mid-sentence
+  glance greet --force                        hear the login greeting now
+
+Environment
+  GLANCE_NAME="Chamberlain"   what to call you (empty string = no name)
+  GLANCE_GREETING=0           turn the login greeting off
 
 Options
   --provider <subscription|api>  which model path to use (default: api if
@@ -87,6 +95,25 @@ async function main(): Promise<number> {
   const argv = process.argv.slice(2);
 
   if (argv[0] === "doctor") return doctor();
+  if (argv[0] === "greet") {
+    const force = argv.includes("--force");
+    const spoken = await greet({ force });
+    if (!spoken) console.error("(skipped — greeted recently, or GLANCE_GREETING=0)");
+    return 0;
+  }
+  if (argv[0] === "greeting") {
+    // Print without speaking, for checking the wording.
+    console.log(await greetingText());
+    return 0;
+  }
+  if (argv[0] === "calibrate") {
+    console.log("Measuring your room for 4 seconds — stay quiet...");
+    const c = await calibrate();
+    console.log(`\n  ambient noise   ${c.ambientDb.toFixed(1)} dB`);
+    console.log(`  silence cutoff  ${c.noiseDb.toFixed(1)} dB`);
+    console.log("\nSaved. glance will use this when deciding you have stopped talking.");
+    return 0;
+  }
   if (argv[0] === "--help" || argv[0] === "-h" || (argv.length === 0 && !process.env.GLANCE_LISTEN)) {
     console.log(USAGE);
     return argv.length === 0 ? 1 : 0;
@@ -106,6 +133,7 @@ async function main(): Promise<number> {
 
   try {
     let question = typed;
+    if (!doListen) setState("thinking");
     if (doListen) {
       heard = await listen({
         dir,
@@ -136,6 +164,7 @@ async function main(): Promise<number> {
 
     let speakMs = 0;
     if (doSpeak) {
+      setState("speaking");
       const s0 = performance.now();
       await speak(result.answer, cfg.voice ?? (await bestVoice()));
       speakMs = performance.now() - s0;
@@ -172,6 +201,7 @@ async function main(): Promise<number> {
     console.error(`glance: ${err instanceof Error ? err.message : String(err)}`);
     return 1;
   } finally {
+    setState("idle");
     // The directory is reused, so only the screenshot is cleared, and only when
     // it was not explicitly kept for inspection.
     if (!keep) rmSync(join(dir, "shot.jpg"), { force: true });

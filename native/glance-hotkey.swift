@@ -13,14 +13,15 @@ import Cocoa
 import Carbon.HIToolbox
 import AVFoundation
 
-enum State {
-    case idle, listening, thinking
+enum State: String {
+    case idle, listening, thinking, speaking
 
     var symbol: String {
         switch self {
         case .idle:      return "eye"
         case .listening: return "waveform"
         case .thinking:  return "ellipsis.circle"
+        case .speaking:  return "speaker.wave.2"
         }
     }
     var label: String {
@@ -28,6 +29,7 @@ enum State {
         case .idle:      return "glance — idle"
         case .listening: return "glance — listening"
         case .thinking:  return "glance — thinking"
+        case .speaking:  return "glance — speaking"
         }
     }
 }
@@ -81,6 +83,8 @@ final class App: NSObject, NSApplicationDelegate {
         statusItem.menu = menu
 
         log("repo root: \(repoRoot)")
+        watchForUnlock()
+        greet()
         registerHotKey()
         requestMicrophoneAccess()
         checkScreenAccess()
@@ -145,6 +149,45 @@ final class App: NSObject, NSApplicationDelegate {
             if a.runModal() == .alertFirstButtonReturn,
                let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
                 NSWorkspace.shared.open(url)
+            }
+        }
+    }
+
+    private var stateTimer: Timer?
+
+    /// Speak a greeting at login and whenever the screen is unlocked.
+    ///
+    /// `com.apple.screenIsUnlocked` is a distributed notification, so this needs
+    /// no permission — the same reason RegisterEventHotKey was chosen over an
+    /// event tap. glance still watches nothing and records nothing on its own.
+    private func watchForUnlock() {
+        DistributedNotificationCenter.default().addObserver(
+            forName: NSNotification.Name("com.apple.screenIsUnlocked"),
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.greet()
+        }
+    }
+
+    /// The CLI decides the wording, the voice, and whether it greeted too
+    /// recently — so a rebuild or a quick lock-unlock does not greet twice.
+    private func greet() {
+        guard !running else { return }
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/bash")
+        task.arguments = ["-lc", "cd '\(repoRoot)' && ./bin/glance-run --greet"]
+        try? task.run()
+    }
+
+    /// Poll ~/.glance/state, which the CLI writes as it moves through phases.
+    private func startWatchingState() {
+        stateTimer?.invalidate()
+        let path = (NSHomeDirectory() as NSString).appendingPathComponent(".glance/state")
+        stateTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] t in
+            guard let self, self.running else { t.invalidate(); return }
+            guard let raw = try? String(contentsOfFile: path, encoding: .utf8) else { return }
+            if let phase = State(rawValue: raw.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                self.setState(phase)
             }
         }
     }
@@ -228,14 +271,14 @@ final class App: NSObject, NSApplicationDelegate {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/bin/bash")
         task.arguments = ["-lc", "cd '\(repoRoot)' && \(command)"]
-        if listening {
-            // Once recording stops, the rest is capture + model + speech.
-            DispatchQueue.global().asyncAfter(deadline: .now() + 5) { [weak self] in
-                if self?.running == true { self?.setState(.thinking) }
-            }
-        }
+        // Follow the real phase rather than guessing. The previous version
+        // flipped to "thinking" on a five-second timer, so it claimed to be
+        // thinking while the microphone was still open — which reads as being
+        // cut off mid-sentence even when the recording is fine.
+        startWatchingState()
         task.terminationHandler = { [weak self] _ in
             self?.running = false
+            DispatchQueue.main.async { self?.stateTimer?.invalidate() }
             self?.setState(.idle)
         }
         do { try task.run() } catch {
