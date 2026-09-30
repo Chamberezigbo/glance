@@ -393,6 +393,39 @@ transparent, click-through `NSWindow` at screen level, drawing a pulsing ring
 that fades after a few seconds. No permission, no interaction, disappears on its
 own.
 
+## Answer panel — built
+
+A small panel of text next to the cursor, so an answer can be read instead of
+only heard.
+
+**This is Phase 6's easy half.** The pointer idea failed because the model could
+not locate controls accurately — 250-330 real pixels of error. The cursor's
+position needs no model at all, so the same window machinery works with none of
+the guesswork, and still no new permission: it is an ordinary window we draw,
+not a screen overlay.
+
+Details that matter:
+
+- **Non-activating**, so it never steals focus from the window the question was
+  about.
+- **Selectable text**, so a path or flag can be copied out — exactly the case
+  where a spoken answer is useless.
+- **Lingers by length**, roughly 200 words per minute with a four-second floor,
+  so a three-word answer does not vanish before it is noticed.
+
+### Answers match the modality of the question
+
+A typed question gets the panel only. A spoken question gets both.
+
+Someone typing is at the keyboard with their eyes on the screen: reading is
+natural and being spoken at is intrusive. Someone speaking has their attention
+elsewhere — so speak it, and leave the panel up anyway, because spoken text
+cannot be re-read.
+
+`--speak` / `--no-speak` override it per run; `answerMode` in
+`~/.glance/config.json` overrides it permanently (`both`, `voice`, `popup`,
+`none`).
+
 ## Phase 7 (proposed) — "Hey glance" wake word
 
 Wake it by voice instead of reaching for a hotkey. Costs **zero tokens**:

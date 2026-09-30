@@ -9,6 +9,7 @@ import { speak, bestVoice } from "./speak.js";
 import { listen, setState, calibrate } from "./listen.js";
 import { greet, greetingText } from "./greet.js";
 import * as session from "./session.js";
+import { answerMode, publishAnswer } from "./answer.js";
 
 const USAGE = `
 glance — ask a question about what is on your screen
@@ -24,6 +25,7 @@ glance — ask a question about what is on your screen
 Environment
   GLANCE_NAME="Chamberlain"   what to call you (empty string = no name)
   GLANCE_GREETING=0           turn the login greeting off
+  GLANCE_ANSWER_MODE=both     both | voice | popup | none
 
 Options
   --provider <subscription|api>  which model path to use (default: api if
@@ -45,6 +47,12 @@ Options
   --speak                        read the answer aloud with \`say\`
   --no-speak                     with --listen, print instead of speaking
   --voice <name>                 voice for --speak (default: best installed)
+  --popup                        show the answer in a panel by the cursor
+  --no-popup                     suppress that panel
+
+By default glance answers the way you asked: typed questions get the panel,
+spoken questions get both the panel and a spoken answer. Override with
+--speak / --no-speak, or set answerMode in ~/.glance/config.json.
   --verbose                      print timing and token counts
   --keep                         keep the screenshot and print its path
 `;
@@ -87,6 +95,8 @@ function parseArgs(argv: string[]): Args {
       case "--voice": cfg.voice = next(); doSpeak = true; break;
       case "--speak": doSpeak = true; break;
       case "--no-speak": noSpeak = true; break;
+      case "--popup": process.env.GLANCE_ANSWER_MODE = noSpeak ? "popup" : "both"; break;
+      case "--no-popup": process.env.GLANCE_ANSWER_MODE = "voice"; break;
       case "--listen": case "-l": doListen = true; break;
       case "--follow": case "-f": follow = true; break;
       case "--new": fresh = true; break;
@@ -97,9 +107,10 @@ function parseArgs(argv: string[]): Args {
         if (a && !a.startsWith("--")) words.push(a);
     }
   }
-  // Asking out loud implies wanting the answer out loud — it is a conversation,
-  // not a dictation box. --no-speak opts back out.
+  // --speak / --no-speak now only override the modality default in answer.ts.
   const speak = noSpeak ? false : doSpeak || doListen;
+  if (noSpeak) process.env.GLANCE_ANSWER_MODE = "popup";
+  else if (doSpeak && !doListen) process.env.GLANCE_ANSWER_MODE = "both";
   return { question: words.join(" "), cfg, speak, keep, listen: doListen, whisper, follow, fresh };
 }
 
@@ -205,8 +216,13 @@ async function main(): Promise<number> {
 
     console.log(result.answer);
 
+    const mode = answerMode(doListen);
+    if (mode === "both" || mode === "popup") {
+      publishAnswer(result.answer, { question, followUp: resuming });
+    }
+
     let speakMs = 0;
-    if (doSpeak) {
+    if (mode === "both" || mode === "voice") {
       setState("speaking");
       const s0 = performance.now();
       await speak(result.answer, cfg.voice ?? (await bestVoice()));

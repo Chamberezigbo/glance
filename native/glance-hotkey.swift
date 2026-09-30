@@ -38,6 +38,82 @@ enum State: String {
     }
 }
 
+/// A small panel of text near the cursor.
+///
+/// Non-activating, so it never steals focus from what you are working in —
+/// which matters because the answer is usually about that window. Floating
+/// level, so it sits above normal windows without being a screen overlay.
+/// No permission of any kind: this is an ordinary window, drawn by us.
+final class AnswerPanel {
+    private var panel: NSPanel?
+    private var dismissTimer: Timer?
+
+    func show(_ text: String, near point: NSPoint) {
+        hide()
+
+        let font = NSFont.systemFont(ofSize: 14)
+        let maxWidth: CGFloat = 380
+        let inset: CGFloat = 16
+
+        let label = NSTextField(wrappingLabelWithString: text)
+        label.font = font
+        label.textColor = .labelColor
+        label.isSelectable = true          // so an identifier can be copied out
+        label.preferredMaxLayoutWidth = maxWidth - inset * 2
+        label.setFrameSize(label.fittingSize)
+
+        let w = min(maxWidth, label.frame.width + inset * 2)
+        let h = label.frame.height + inset * 2
+
+        // Keep it fully on whichever screen the cursor is on.
+        let screen = NSScreen.screens.first { $0.frame.contains(point) } ?? NSScreen.main
+        var origin = NSPoint(x: point.x + 18, y: point.y - h - 18)
+        if let vf = screen?.visibleFrame {
+            origin.x = min(max(vf.minX + 8, origin.x), vf.maxX - w - 8)
+            origin.y = min(max(vf.minY + 8, origin.y), vf.maxY - h - 8)
+        }
+
+        let p = NSPanel(contentRect: NSRect(x: origin.x, y: origin.y, width: w, height: h),
+                        styleMask: [.borderless, .nonactivatingPanel],
+                        backing: .buffered, defer: false)
+        p.level = .floating
+        p.isOpaque = false
+        p.backgroundColor = .clear
+        p.hasShadow = true
+        p.ignoresMouseEvents = false
+        p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+
+        let blur = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: w, height: h))
+        blur.material = .hudWindow
+        blur.blendingMode = .behindWindow
+        blur.state = .active
+        blur.wantsLayer = true
+        blur.layer?.cornerRadius = 12
+        blur.layer?.masksToBounds = true
+
+        label.setFrameOrigin(NSPoint(x: inset, y: inset))
+        blur.addSubview(label)
+        p.contentView = blur
+        p.orderFrontRegardless()
+        panel = p
+
+        // Long answers need longer on screen. Roughly 200 words per minute,
+        // floored so a three-word answer does not vanish before it is seen.
+        let words = text.split(separator: " ").count
+        let seconds = max(4.0, min(30.0, Double(words) / 200.0 * 60.0 + 2.5))
+        dismissTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
+            self?.hide()
+        }
+    }
+
+    func hide() {
+        dismissTimer?.invalidate()
+        dismissTimer = nil
+        panel?.orderOut(nil)
+        panel = nil
+    }
+}
+
 final class App: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var hotKeyRef: EventHotKeyRef?
@@ -89,6 +165,7 @@ final class App: NSObject, NSApplicationDelegate {
 
         log("repo root: \(repoRoot)")
         watchForUnlock()
+        watchForAnswers()
         greet()
         registerHotKey()
         requestMicrophoneAccess()
@@ -159,6 +236,43 @@ final class App: NSObject, NSApplicationDelegate {
     }
 
     private var stateTimer: Timer?
+    private let answerPanel = AnswerPanel()
+    private var lastAnswerAt: Double = 0
+
+    private var answerWatch: Timer?
+
+    /// Watch for answers continuously, not only during a hotkey run.
+    ///
+    /// Answers also arrive from `glance` typed in a terminal, and those deserve
+    /// the panel just as much. Polling a small file twice a second is cheaper
+    /// than an FSEvents stream and simpler to reason about.
+    private func watchForAnswers() {
+        answerWatch = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            self?.showAnswerIfNew()
+        }
+        // Ignore whatever is already on disk, so restarting does not replay the
+        // last answer.
+        let path = (NSHomeDirectory() as NSString).appendingPathComponent(".glance/answer.json")
+        if let data = FileManager.default.contents(atPath: path),
+           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let at = obj["at"] as? Double {
+            lastAnswerAt = at
+        }
+    }
+
+    /// Show the answer the CLI just wrote, positioned by the cursor.
+    private func showAnswerIfNew() {
+        let path = (NSHomeDirectory() as NSString).appendingPathComponent(".glance/answer.json")
+        guard let data = FileManager.default.contents(atPath: path),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let text = obj["text"] as? String,
+              let at = obj["at"] as? Double,
+              at > lastAnswerAt else { return }
+        lastAnswerAt = at
+        DispatchQueue.main.async { [weak self] in
+            self?.answerPanel.show(text, near: NSEvent.mouseLocation)
+        }
+    }
 
     /// Speak a greeting at login and whenever the screen is unlocked.
     ///
@@ -194,6 +308,7 @@ final class App: NSObject, NSApplicationDelegate {
             if let phase = State(rawValue: raw.trimmingCharacters(in: .whitespacesAndNewlines)) {
                 self.setState(phase)
             }
+            self.showAnswerIfNew()
         }
     }
 
@@ -310,6 +425,7 @@ final class App: NSObject, NSApplicationDelegate {
         task.terminationHandler = { [weak self] _ in
             guard let self else { return }
             self.running = false
+            self.showAnswerIfNew()
             DispatchQueue.main.async { self.stateTimer?.invalidate() }
             // Most questions are follow-ups about the same screen, so show that
             // the conversation is still open rather than making people guess.

@@ -18,6 +18,14 @@ const run = promisify(execFile);
  * what someone wants to be called out loud. An empty value drops the name
  * entirely, which reads better than using the wrong one.
  */
+export function readConfig(): Record<string, unknown> {
+  try {
+    return JSON.parse(readFileSync(join(homedir(), ".glance", "config.json"), "utf8"));
+  } catch {
+    return {};
+  }
+}
+
 export async function preferredName(): Promise<string> {
   const override = process.env.GLANCE_NAME;
   if (override !== undefined) return override.trim();
