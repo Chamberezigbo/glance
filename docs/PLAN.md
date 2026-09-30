@@ -393,6 +393,56 @@ transparent, click-through `NSWindow` at screen level, drawing a pulsing ring
 that fades after a few seconds. No permission, no interaction, disappears on its
 own.
 
+## Phase 7 (proposed) — "Hey glance" wake word
+
+Wake it by voice instead of reaching for a hotkey. Costs **zero tokens**:
+detection is entirely local and the screen is still only captured after the
+wake word fires.
+
+### The decision to make first, before any code
+
+A wake word means **the microphone is always open**, which contradicts what the
+README promises today:
+
+> Not always-on. The microphone and the screen are read only after a trigger.
+
+That claim can be honestly revised — nothing is recorded, nothing leaves the
+machine, the screen is still only read after the wake word — but the revised
+version is a weaker promise, and "always listening" is precisely what people are
+suspicious of. It should be chosen deliberately, not drifted into.
+
+### Approaches
+
+| Approach | CPU | New permission | Cost |
+|---|---|---|---|
+| **Energy-gated whisper** | ~0% idle, brief spikes | none | free |
+| Porcupine (`@picovoice/porcupine-node` 4.0.2) | ~1-2% constant | none | free tier, needs an access key and a custom wake-word model |
+| macOS `SFSpeechRecognizer` | low | **Speech Recognition** | free |
+
+**Energy-gated whisper first.** ffmpeg's `silencedetect` — already used to know
+when the user stops talking — watches for sound, and only then does `tiny.en`
+transcribe a short buffer and look for the phrase. Silence costs nothing, which
+matters on two cores that already idle under load.
+
+It also adds no dependency, no account, and **no new permission**. The minimal
+permission set is the strongest thing glance has; `SFSpeechRecognizer` would
+spend it for convenience.
+
+Porcupine is the better production answer — purpose-built, lower false-positive
+rate — but needs a Picovoice account and a trained model, which is friction for
+something not yet known to work.
+
+### Probe this before building it
+
+False positives are the risk. A wake word that fires on "hey, glance at this" in
+conversation, or on the television, is worse than the hotkey. On a machine
+already at load 4 with 4.5 GB swapped, a detector that wakes whisper too often
+will be felt.
+
+So the question is the same shape as Phase 0's: **can it run all day without
+being annoying or slow?** Measure idle CPU and false-positive rate over a few
+minutes first, the way the Phase 6 pointer idea was probed and rejected.
+
 ---
 
 # Beyond v1 — distribution and the product question
