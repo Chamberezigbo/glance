@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.DS_Store
+*.log
+/tmp/
+models/
+vendor/
+bin/glance-hotkey
+bin/cursor-display
+glance.log
+glance-agent.log
+bin/glance.app/

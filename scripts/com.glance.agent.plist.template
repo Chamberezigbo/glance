@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.glance.agent</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>__ROOT__/bin/glance.app/Contents/MacOS/glance</string>
+  </array>
+
+  <!-- Start at login and sit idle. The daemon costs nothing until the hotkey
+       is pressed: no polling, no capture, no microphone. -->
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+
+  <!-- Menu-bar UI needs the user's GUI session, not a background context. -->
+  <key>LimitLoadToSessionType</key>
+  <string>Aqua</string>
+
+  <key>StandardOutPath</key>
+  <string>__ROOT__/glance-agent.log</string>
+  <key>StandardErrorPath</key>
+  <string>__ROOT__/glance-agent.log</string>
+
+  <key>ProcessType</key>
+  <string>Interactive</string>
+</dict>
+</plist>

@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Launched by the menu-bar daemon.
+#   ./bin/glance-run                 -> ask out loud
+#   ./bin/glance-run --ask "..."     -> ask with a typed question
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+# launchd gives us a minimal PATH, so find node the way the user's shell would.
+export PATH="$HOME/.nvm/versions/node/$(ls "$HOME/.nvm/versions/node" 2>/dev/null | sort -V | tail -1)/bin:/usr/local/bin:/opt/homebrew/bin:$PATH"
+
+if [ "${1:-}" = "--ask" ] && [ -n "${2:-}" ]; then
+  exec node dist/cli.js --speak "$2" >> "$ROOT/glance.log" 2>&1
+fi
+exec node dist/cli.js --listen >> "$ROOT/glance.log" 2>&1

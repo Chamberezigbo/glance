@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key>            <string>glance</string>
+  <key>CFBundleDisplayName</key>     <string>glance</string>
+  <key>CFBundleIdentifier</key>      <string>com.glance.app</string>
+  <key>CFBundleExecutable</key>      <string>glance</string>
+  <key>CFBundlePackageType</key>     <string>APPL</string>
+  <key>CFBundleShortVersionString</key> <string>0.1.0</string>
+  <key>CFBundleVersion</key>         <string>1</string>
+  <key>LSMinimumSystemVersion</key>  <string>13.0</string>
+
+  <!-- Menu-bar only: no Dock icon, no window. -->
+  <key>LSUIElement</key>             <true/>
+
+  <!-- Without these two strings macOS denies access without ever prompting. -->
+  <key>NSMicrophoneUsageDescription</key>
+  <string>glance records your spoken question when you press the hotkey. Nothing is recorded at any other time.</string>
+  <key>NSCameraUsageDescription</key>
+  <string>glance does not use the camera.</string>
+</dict>
+</plist>

@@ -1,0 +1,32 @@
+{
+  "name": "glance",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "An on-demand screen assistant for macOS. Press a key, ask out loud, get an answer out loud.",
+  "bin": {
+    "glance": "./dist/cli.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "node --experimental-strip-types src/cli.ts",
+    "glance": "npm run build --silent && node dist/cli.js",
+    "doctor": "npm run build --silent && node dist/cli.js doctor",
+    "setup:whisper": "bash scripts/setup-whisper.sh",
+    "setup:models": "bash scripts/setup-models.sh",
+    "setup": "npm install && npm run build && npm run setup:hotkey && npm run setup:whisper && npm run setup:models && npm run doctor",
+    "setup:hotkey": "bash scripts/build-app.sh",
+    "agent:install": "bash scripts/install-agent.sh",
+    "agent:uninstall": "bash scripts/uninstall-agent.sh"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.70.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  }
+}
