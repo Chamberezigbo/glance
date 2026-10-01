@@ -91,6 +91,7 @@ language when the question was asked out loud.
 | Hotkey path only speaks the answer | Text goes to `glance.log`; nothing to re-read or copy |
 | Word cap is advisory | The model runs over it; truncating would cut mid-sentence, so it warns instead |
 | whisper-server is never shut down | Stays resident holding 141 MB until the machine restarts |
+| No offline queue | A question asked with no network is lost unless retried by hand with `glance retry` |
 | `--keep` semantics | Now that the session directory is stable, the flag only controls whether the raw shot is deleted |
 
 ---

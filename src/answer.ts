@@ -2,6 +2,7 @@ import { writeFileSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { readConfig } from "./greet.js";
+import { classify, describe } from "./net.js";
 
 /**
  * How an answer is delivered.
@@ -68,9 +69,15 @@ export function publishError(message: string, question: string): void {
  * The underlying messages already name their fix; this keeps the first sentence
  * short, because that is the part that gets spoken.
  */
-export function humanError(err: unknown): { spoken: string; shown: string } {
+export function humanError(err: unknown, online: boolean | null = null): { spoken: string; shown: string } {
   const raw = err instanceof Error ? err.message : String(err);
   const first = raw.split("\n")[0] ?? raw;
+
+  // Network faults first: they are the most common failure and the least
+  // self-explanatory, and the fix differs completely between being offline and
+  // the service being down.
+  const network = describe(classify(err), online);
+  if (network) return network;
 
   if (/Screen Recording/i.test(raw)) {
     return {

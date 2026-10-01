@@ -321,7 +321,7 @@ export function statePath(): string {
 }
 
 /** Publish the current phase so the menu-bar icon can tell the truth. */
-export function setState(phase: "listening" | "thinking" | "speaking" | "idle"): void {
+export function setState(phase: "listening" | "thinking" | "speaking" | "slow" | "idle"): void {
   try {
     mkdirSync(join(homedir(), ".glance"), { recursive: true });
     writeFileSync(statePath(), phase);

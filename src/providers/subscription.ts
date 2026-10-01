@@ -5,6 +5,7 @@ import { findClaudeCli } from "../config.js";
 import { systemPrompt } from "../prompt.js";
 import { sessionDir } from "../capture.js";
 import { STEPS_MARKER } from "../task.js";
+import { REQUEST_TIMEOUT_MS } from "../net.js";
 import type { GlanceRequest, GlanceResult, Provider, TokenUsage } from "./types.js";
 
 const run = promisify(execFile);
@@ -72,6 +73,11 @@ export class SubscriptionProvider implements Provider {
       {
         cwd,
         maxBuffer: 16 * 1024 * 1024,
+        // Without this the wait is unbounded: a hung network leaves the badge
+        // pulsing beside the cursor with no answer and no error. execFile kills
+        // the child and reports `killed`, which net.classify() reads as a timeout.
+        timeout: REQUEST_TIMEOUT_MS,
+        killSignal: "SIGTERM",
         // Make sure a stray key in the environment can't silently move billing
         // to pay-as-you-go when the user explicitly asked for the subscription.
         env: { ...process.env, ANTHROPIC_API_KEY: undefined } as NodeJS.ProcessEnv,

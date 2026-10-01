@@ -10,6 +10,7 @@ import { listen, setState, calibrate } from "./listen.js";
 import { greet, greetingText } from "./greet.js";
 import * as session from "./session.js";
 import * as task from "./task.js";
+import { isOnline, classify, SLOW_AFTER_MS } from "./net.js";
 import { answerMode, publishAnswer, publishError, humanError } from "./answer.js";
 
 const USAGE = `
@@ -27,6 +28,11 @@ glance — ask a question about what is on your screen
                                               next one (⌥N)
   glance task                                 show the checklist
   glance task clear | restore                 drop it, or bring it back
+  glance retry                                ask the last failed question again
+
+Environment
+  GLANCE_TIMEOUT_MS=120000    give up on a request after this long
+  GLANCE_SLOW_MS=30000        warn that it is taking unusually long
 
 Big multi-step answers become a checklist you work through one step at a time.
 Small questions stay plain prose.
@@ -128,6 +134,26 @@ async function main(): Promise<number> {
   const argv = process.argv.slice(2);
 
   if (argv[0] === "doctor") return doctor();
+  if (argv[0] === "retry") {
+    // Ask the last failed question again, so a network blip does not cost the
+    // user the trouble of saying or typing it a second time.
+    try {
+      const { readFileSync } = await import("node:fs");
+      const { homedir } = await import("node:os");
+      const pending = JSON.parse(
+        readFileSync(join(homedir(), ".glance", "pending.json"), "utf8"),
+      );
+      if (!pending.question) throw new Error("empty");
+      console.error(`glance: retrying "${pending.question}"`);
+      const forward = [pending.question, ...(pending.follow ? ["--follow"] : [])];
+      process.argv = [process.argv[0]!, process.argv[1]!, ...forward];
+      return await main();
+    } catch {
+      console.error("glance: nothing to retry.");
+      return 1;
+    }
+  }
+
   if (argv[0] === "next") {
     const t = task.load();
     if (!t) {
@@ -277,12 +303,20 @@ async function main(): Promise<number> {
       ? null
       : await capture({ display: cfg.display, width: cfg.width, dir });
 
+    // Say so when it is taking longer than usual. A user who thinks the tool is
+    // broken presses the hotkey again, which starts a second expensive request
+    // alongside the first one still in flight.
+    const slowWarning = setTimeout(() => {
+      setState("slow");
+      console.error(`glance: still waiting after ${Math.round(SLOW_AFTER_MS / 1000)}s — the network may be slow.`);
+    }, SLOW_AFTER_MS);
+
     const result = await provider.ask({
       question,
       imagePath: shot?.path,
       maxWords: cfg.maxWords,
       resume: resuming ? prior!.ref : undefined,
-    });
+    }).finally(() => clearTimeout(slowWarning));
 
     if (result.session) {
       session.save({
@@ -361,9 +395,27 @@ async function main(): Promise<number> {
     if (keep && shot) console.error(`\nscreenshot: ${shot.path}`);
     return 0;
   } catch (err) {
+    // Only probe the network once something has already failed — a reachability
+    // check on the happy path is latency spent to learn nothing.
+    const fault = classify(err);
+    const online = fault ? await isOnline().catch(() => null) : null;
+
+    // Keep the question. Losing a spoken one to a network blip means saying the
+    // whole thing again, which is the most irritating way to fail.
+    if (fault) {
+      try {
+        const { writeFileSync } = await import("node:fs");
+        const { homedir } = await import("node:os");
+        writeFileSync(
+          join(homedir(), ".glance", "pending.json"),
+          JSON.stringify({ question: typed, follow: follow, at: Date.now() }, null, 2),
+        );
+      } catch { /* retry is a convenience */ }
+    }
+
     // Say something. A failure that only reaches a log file is indistinguishable
     // from being ignored, which is the single worst way for this to behave.
-    const { spoken, shown } = humanError(err);
+    const { spoken, shown } = humanError(err, online);
     console.error(`glance: ${shown}`);
     publishError(shown, typed);
     if (doListen && answerMode(true) !== "popup") {

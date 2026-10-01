@@ -491,6 +491,38 @@ or missing marker just means a normal prose answer, never a lost one.
   the cursor covers the thing being worked on, and only one line is actionable
   at a time.
 
+## Network failures
+
+glance makes one slow call over the network and then waits. Three things were
+wrong with how it handled that going badly.
+
+**The wait was unbounded.** Neither provider had a timeout, so a hung
+connection left the badge pulsing beside the cursor forever — no answer, no
+error, the same "failure that looks like silence" that cost fifteen silent
+failures during the permission work. Both paths now give up after 120s
+(`GLANCE_TIMEOUT_MS`).
+
+**Being slow looked identical to being broken.** After 30s (`GLANCE_SLOW_MS`)
+the badge changes and says so. This matters for a practical reason: a user who
+believes the tool has died presses the hotkey again, starting a second ~59,000
+token request alongside the first.
+
+**Offline and "the service is down" were indistinguishable**, despite having
+completely different fixes. On failure — and only on failure, since a
+reachability probe on the happy path is latency spent to learn nothing — glance
+checks two independent endpoints and says which it is.
+
+Faults are classified by walking the error's `cause` chain, because the
+Anthropic SDK reports only `Connection error.` and hides the real reason
+underneath. Without that the user saw a raw library string.
+
+**Retries differ by path, deliberately.** The API path retries twice with
+backoff; a retry there costs a fraction of a cent. The subscription path never
+retries automatically, because each attempt costs ~59,000 tokens of a usage
+window. It offers `glance retry` instead, which reuses the stored question —
+losing a spoken question to a network blip and having to say it all again is the
+most irritating way to fail.
+
 ## Phase 7 (proposed) — "Hey glance" wake word
 
 Wake it by voice instead of reaching for a hotkey. Costs **zero tokens**:

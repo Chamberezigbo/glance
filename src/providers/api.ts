@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { readFile } from "node:fs/promises";
 import { systemPrompt, userPrompt } from "../prompt.js";
+import { REQUEST_TIMEOUT_MS } from "../net.js";
 import type { GlanceRequest, GlanceResult, Provider, TokenUsage } from "./types.js";
 
 /**
@@ -22,7 +23,18 @@ export class ApiProvider implements Provider {
           "to use your Claude subscription instead.",
       );
     }
-    return new ApiProvider(model, new Anthropic({ apiKey }));
+    return new ApiProvider(
+      model,
+      new Anthropic({
+        apiKey,
+        timeout: REQUEST_TIMEOUT_MS,
+        // Two retries, which the SDK backs off between. Safe here in a way it
+        // is not on the subscription path: a retried API call costs a few
+        // tenths of a cent, while a retried `claude -p` costs ~59,000 tokens
+        // of a usage window.
+        maxRetries: 2,
+      }),
+    );
   }
 
   async ask(req: GlanceRequest): Promise<GlanceResult> {

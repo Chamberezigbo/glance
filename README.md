@@ -96,6 +96,18 @@ over a minute of audio, so you hear the summary and the step you are on.
 A follow-up keeps your task; a new question replaces it, and says so —
 `glance task restore` undoes that.
 
+## When the network misbehaves
+
+| | |
+|---|---|
+| Slow | After 30s the badge changes and says it is taking longer than usual |
+| Hung | Both paths give up after 120s rather than waiting forever |
+| Offline | Told plainly, and distinguished from Claude being unreachable |
+| Rate limited, 5xx, auth | Each gets its own message and its own fix |
+| Anything failed | `glance retry` asks again without retyping or re-speaking it |
+
+Tune with `GLANCE_TIMEOUT_MS` and `GLANCE_SLOW_MS`.
+
 ## Two models, one interface
 
 | | Subscription (`claude -p`) | API key |

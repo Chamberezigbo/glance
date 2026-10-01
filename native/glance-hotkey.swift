@@ -14,13 +14,16 @@ import Carbon.HIToolbox
 import AVFoundation
 
 enum State: String {
-    case idle, listening, thinking, speaking, followable, task
+    case idle, listening, thinking, speaking, slow, followable, task
 
     var symbol: String {
         switch self {
         case .idle:       return "eye"
         case .listening:  return "waveform"
         case .thinking:   return "ellipsis.circle"
+        // Taking longer than usual. Saying so stops the user pressing the
+        // hotkey again and starting a second expensive request alongside this one.
+        case .slow:       return "clock.badge.exclamationmark"
         case .speaking:   return "speaker.wave.2"
         // Filled, so a follow-up window is visible at a glance without being
         // a different shape to learn.
@@ -35,6 +38,7 @@ enum State: String {
         case .idle:       return "glance — idle"
         case .listening:  return "glance — listening"
         case .thinking:   return "glance — thinking"
+        case .slow:       return "glance — taking longer than usual, the network may be slow"
         case .speaking:   return "glance — speaking"
         case .followable: return "glance — press ⌥Space again to follow up on the same screen"
         case .task:       return "glance — task in progress, ⌥N for the next step"
@@ -91,6 +95,7 @@ final class StatusBadge {
             switch newPhase {
             case "listening": return "waveform"
             case "speaking":  return "speaker.wave.2.fill"
+            case "slow":      return "clock.badge.exclamationmark"
             default:          return "ellipsis"
             }
         }()
@@ -540,7 +545,7 @@ final class App: NSObject, NSApplicationDelegate {
         lastPhase = phase
 
         switch phase {
-        case "listening", "thinking", "speaking":
+        case "listening", "thinking", "speaking", "slow":
             setState(State(rawValue: phase) ?? .idle)
             badge.show(phase)
         default:
