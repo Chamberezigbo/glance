@@ -8,7 +8,10 @@ screen once and answers — spoken aloud, or in a small panel beside your cursor
 It does **not** watch continuously. It glances when told to, which is where the
 name comes from.
 
-<!-- DEMO -->
+![glance answering a question about an error on screen](docs/media/demo.gif)
+
+<sub>Real capture: a `TypeError` in a terminal, a question, and the answer in a
+panel beside the cursor — about twenty seconds, unedited.</sub>
 
 ```
   ⌥Space ──▶ record mic ──▶ whisper.cpp (local) ──┐

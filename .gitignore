@@ -10,3 +10,5 @@ bin/cursor-display
 glance.log
 glance-agent.log
 bin/glance.app/
+docs/media/demo.mp4
+docs/media/demo-raw.mov
