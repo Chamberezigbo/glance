@@ -12,3 +12,4 @@ glance-agent.log
 bin/glance.app/
 docs/media/demo.mp4
 docs/media/demo-raw.mov
+docs/LAUNCH.md
