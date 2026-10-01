@@ -155,11 +155,38 @@ export function currentStep(t: Task): { index: number; total: number; text: stri
   return { index: t.current + 1, total: t.steps.length, text: s.text };
 }
 
-/** How a step is spoken: position first, so it is clear where you are. */
+/**
+ * How a step is spoken: position first, then the step, then what remains.
+ *
+ * The tail matters more than it looks. Working through a list without knowing
+ * how much is left is the difference between a task and a treadmill, and the
+ * count is the one thing a spoken answer cannot convey on its own.
+ */
 export function spokenStep(t: Task): string {
   const c = currentStep(t);
   if (!c) return "";
-  return `Step ${c.index} of ${c.total}. ${c.text}`;
+  const left = t.steps.length - t.current - 1;
+  const tail = left === 0 ? " This is the last one." : left === 1 ? " One more after this." : ` ${left} more after this.`;
+  return `Step ${c.index} of ${c.total}. ${c.text}${tail}`;
+}
+
+/**
+ * Give the model the task as context when answering an unrelated question.
+ *
+ * Costs nothing — it rides along in a prompt that was being sent anyway — and
+ * turns "what's left?" or "am I nearly done?" into answerable questions instead
+ * of ones glance would answer about the screen, having forgotten the task
+ * entirely.
+ */
+export function contextLine(t: Task): string {
+  const done = t.steps.filter((s) => s.done).map((s) => s.text);
+  const todo = t.steps.slice(t.current).map((s) => s.text);
+  return [
+    `The user is part-way through a task: "${t.title}".`,
+    done.length ? `Already done: ${done.join("; ")}.` : "Nothing done yet.",
+    `Still to do: ${todo.join("; ")}.`,
+    "If they ask about progress or what is next, answer from this. Otherwise answer their question normally and do not mention the task.",
+  ].join(" ");
 }
 
 /**

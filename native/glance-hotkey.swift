@@ -327,7 +327,7 @@ final class AnswerPanel {
         }
 
         let hint = NSTextField(labelWithString:
-            checklist.isEmpty ? "click to keep · ⌥R to repeat" : "click for all · ⌥N next step")
+            checklist.isEmpty ? "click to keep · ⌥R to repeat" : "⌥N done · ⌥⇧N check · click for all")
         hint.font = NSFont.systemFont(ofSize: 10)
         hint.textColor = .tertiaryLabelColor
         hint.sizeToFit()
@@ -365,6 +365,7 @@ final class App: NSObject, NSApplicationDelegate {
     private var typeHotKeyRef: EventHotKeyRef?
     private var repeatHotKeyRef: EventHotKeyRef?
     private var nextHotKeyRef: EventHotKeyRef?
+    private var checkHotKeyRef: EventHotKeyRef?
     private var running = false
     private let repoRoot: String
 
@@ -403,11 +404,14 @@ final class App: NSObject, NSApplicationDelegate {
         nextItem = NSMenuItem(title: "Next step", action: #selector(nextStep), keyEquivalent: "")
         clearTaskItem = NSMenuItem(title: "Clear task", action: #selector(clearTask), keyEquivalent: "")
         menu.addItem(nextItem!)
+        checkItem = NSMenuItem(title: "Check this step", action: #selector(checkStep), keyEquivalent: "")
+        menu.addItem(checkItem!)
         menu.addItem(clearTaskItem!)
         menu.addItem(NSMenuItem(title: "New conversation", action: #selector(newConversation), keyEquivalent: ""))
         menu.addItem(.separator())
         for text in ["⌥Space — ask out loud", "⌥⇧Space — type a question",
-                     "⌥R — repeat last answer", "⌥N — next step"] {
+                     "⌥R — repeat this step", "⌥N — next step",
+                     "⌥⇧N — check this step"] {
             let hint = NSMenuItem(title: text, action: nil, keyEquivalent: "")
             hint.isEnabled = false
             menu.addItem(hint)
@@ -417,6 +421,7 @@ final class App: NSObject, NSApplicationDelegate {
         menu.items.forEach { $0.target = self }
         statusItem.menu = menu
         updateTaskMenu()
+        installEditMenu()
 
         log("repo root: \(repoRoot)")
         watchForUnlock()
@@ -495,6 +500,7 @@ final class App: NSObject, NSApplicationDelegate {
     private let badge = StatusBadge()
     private var nextItem: NSMenuItem?
     private var clearTaskItem: NSMenuItem?
+    private var checkItem: NSMenuItem?
     private var taskActive = false
     private var lastTaskAt: Double = 0
     private var lastPhase = ""
@@ -602,6 +608,7 @@ final class App: NSObject, NSApplicationDelegate {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.nextItem?.isHidden = !self.taskActive
+            self.checkItem?.isHidden = !self.taskActive
             self.clearTaskItem?.isHidden = !self.taskActive
         }
     }
@@ -681,6 +688,38 @@ final class App: NSObject, NSApplicationDelegate {
         FileHandle.standardError.write("glance: \(msg)\n".data(using: .utf8)!)
     }
 
+    /// Give the app an Edit menu, so ⌘V works.
+    ///
+    /// A menu-bar-only app (LSUIElement) has no main menu, and macOS dispatches
+    /// ⌘X/⌘C/⌘V/⌘A through the Edit menu's key equivalents — not through the
+    /// text view itself. Without this the typed-question box silently refuses to
+    /// paste and the answer panel refuses to copy, with no error and nothing to
+    /// suggest why. The menu is never visible; only its shortcuts matter.
+    private func installEditMenu() {
+        let mainMenu = NSMenu()
+        let editItem = NSMenuItem()
+        let editMenu = NSMenu(title: "Edit")
+
+        let entries: [(String, Selector, String)] = [
+            ("Undo", Selector(("undo:")), "z"),
+            ("Redo", Selector(("redo:")), "Z"),
+            ("Cut", #selector(NSText.cut(_:)), "x"),
+            ("Copy", #selector(NSText.copy(_:)), "c"),
+            ("Paste", #selector(NSText.paste(_:)), "v"),
+            ("Select All", #selector(NSText.selectAll(_:)), "a"),
+        ]
+        for (title, action, key) in entries {
+            // A nil target sends the action down the responder chain, which is
+            // what puts it in front of whichever text view currently has focus.
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+            item.target = nil
+            editMenu.addItem(item)
+        }
+        editItem.submenu = editMenu
+        mainMenu.addItem(editItem)
+        NSApp.mainMenu = mainMenu
+    }
+
     private func setState(_ s: State) {
         DispatchQueue.main.async {
             let img = NSImage(systemSymbolName: s.symbol, accessibilityDescription: s.label)
@@ -703,6 +742,7 @@ final class App: NSObject, NSApplicationDelegate {
             case 2:  app.askTyped()
             case 3:  app.repeatLast()
             case 4:  app.nextStep()
+            case 5:  app.checkStep()
             default: app.trigger()
             }
             return noErr
@@ -731,8 +771,15 @@ final class App: NSObject, NSApplicationDelegate {
                                      nextID, GetApplicationEventTarget(), 0, &nextHotKeyRef)
         log(s3 == noErr ? "⌥R registered (repeat last answer)"
                         : "could not register ⌥R (error \(s3))")
+        // ⌥⇧N — check the screen before advancing. Mirrors ⌥Space / ⌥⇧Space:
+        // plain is the fast free path, shift is the one that costs something.
+        let checkID = EventHotKeyID(signature: OSType(0x474C4E43 /* GLNC */), id: 5)
+        let s5 = RegisterEventHotKey(UInt32(kVK_ANSI_N), UInt32(optionKey | shiftKey),
+                                     checkID, GetApplicationEventTarget(), 0, &checkHotKeyRef)
         log(s4 == noErr ? "⌥N registered (next step)"
                         : "could not register ⌥N (error \(s4))")
+        log(s5 == noErr ? "⌥⇧N registered (check this step)"
+                        : "could not register ⌥⇧N (error \(s5))")
     }
 
     /// Ask by typing: a small panel instead of the microphone.
@@ -793,6 +840,9 @@ final class App: NSObject, NSApplicationDelegate {
 
     /// Tick the current step and move on.
     @objc func nextStep() { runDetached("./bin/glance-run --next") }
+
+    /// Look at the screen and judge whether the current step actually happened.
+    @objc func checkStep() { runDetached("./bin/glance-run --check") }
 
     /// Drop the task. Recoverable with `glance task restore`.
     @objc func clearTask() {

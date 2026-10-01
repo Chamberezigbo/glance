@@ -13,6 +13,7 @@ case "${1:-}" in
   --greet)  exec node dist/cli.js greet  >> "$ROOT/glance.log" 2>&1 ;;
   --repeat) exec node dist/cli.js repeat >> "$ROOT/glance.log" 2>&1 ;;
   --next)   exec node dist/cli.js next   >> "$ROOT/glance.log" 2>&1 ;;
+  --check)  exec node dist/cli.js check  >> "$ROOT/glance.log" 2>&1 ;;
   --task-clear) exec node dist/cli.js task clear >> "$ROOT/glance.log" 2>&1 ;;
   --task)   exec node dist/cli.js task   >> "$ROOT/glance.log" 2>&1 ;;
   --ask)   [ -n "${2:-}" ] && exec node dist/cli.js --speak "$2" >> "$ROOT/glance.log" 2>&1 ;;

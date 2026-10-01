@@ -491,6 +491,31 @@ or missing marker just means a normal prose answer, never a lost one.
   the cursor covers the thing being worked on, and only one line is actionable
   at a time.
 
+### Following up on a task
+
+Found in real use: ⌥R repeated the last *answer*, which mid-task is the summary
+from before you started — exactly the wrong thing. It now repeats the step you
+are on, with how many remain.
+
+Three changes, together, turn a counter into something that follows along:
+
+- **⌥R repeats the current step**, and says what is left. Working through a list
+  without knowing how much remains is the difference between a task and a
+  treadmill, and a spoken answer cannot convey a progress bar.
+- **⌥⇧N checks the work.** A fresh screenshot, the same conversation, and a
+  judgement on whether the step actually happened — advancing if so, naming what
+  is missing if not. Separate from ⌥N on purpose: ticking is free and instant,
+  verifying costs a capture and ~30,000 tokens, so the user chooses rather than
+  every step silently charging them. It mirrors ⌥Space / ⌥⇧Space, where plain is
+  the fast path and shift is the one that costs more.
+- **The task travels with ordinary questions.** A live task is injected into the
+  prompt as context, so "how many steps left?" is answerable without a second
+  call. Free: it rides along in a request already being sent.
+
+This needed one provider change — resuming a conversation *with* a new
+screenshot, which previously was not expressible: resuming meant reusing the old
+image, and a new image meant a new conversation.
+
 ## Network failures
 
 glance makes one slow call over the network and then waits. Three things were

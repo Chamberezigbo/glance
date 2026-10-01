@@ -28,6 +28,8 @@ glance — ask a question about what is on your screen
                                               next one (⌥N)
   glance task                                 show the checklist
   glance task clear | restore                 drop it, or bring it back
+  glance check                                look at the screen and judge
+                                              whether the current step is done
   glance retry                                ask the last failed question again
 
 Environment
@@ -154,6 +156,73 @@ async function main(): Promise<number> {
     }
   }
 
+  if (argv[0] === "check") {
+    // Look at the screen and judge whether the current step actually happened.
+    //
+    // Deliberately separate from `next`. Ticking a step is free and instant;
+    // verifying costs a capture and a resumed round trip (~30,000 tokens). The
+    // user decides which they want, rather than every step silently costing
+    // them one.
+    const t = task.load();
+    if (!t) { console.error("glance: no task in progress."); return 1; }
+    const c = task.currentStep(t);
+    if (!c) { console.error("glance: nothing to check."); return 1; }
+
+    const cfgC = resolveConfig({});
+    const dirC = sessionDir();
+    setState("thinking");
+    try {
+      const providerC = createProvider(cfgC);
+      const priorC = session.load();
+      const shotC = await capture({ display: cfgC.display, width: cfgC.width, dir: dirC });
+      const res = await providerC.ask({
+        question:
+          `Looking at this new screenshot, has this step been completed: "${c.text}"?\n\n` +
+          `Begin your reply with exactly DONE or NOT_DONE, then one short sentence of plain prose saying what you can see that tells you. ` +
+          `If you genuinely cannot tell from the screen, say NOT_DONE and name the one thing you would need to see.`,
+        imagePath: shotC.path,
+        maxWords: 30,
+        resume: session.isUsable(priorC, cfgC) ? priorC!.ref : undefined,
+      });
+      if (res.session) {
+        session.save({
+          provider: cfgC.provider, model: cfgC.model, ref: res.session,
+          capturedAt: Date.now(), lastAnswerAt: Date.now(),
+          turns: (priorC?.turns ?? 0) + 1,
+        });
+      }
+
+      const done = /^\s*DONE\b/i.test(res.answer);
+      const why = res.answer.replace(/^\s*(DONE|NOT_DONE)\b[:.\s-]*/i, "").trim();
+
+      if (done) {
+        const { task: updated, finished } = task.advance(t);
+        const msg = finished
+          ? `Yes — ${why} That was the last step.`
+          : `Yes — ${why} ${task.spokenStep(updated!)}`;
+        console.log(msg);
+        task.publishTask(updated);
+        publishAnswer(msg, { question: c.text, followUp: true });
+        if (!argv.includes("--silent")) await speak(msg).catch(() => {});
+      } else {
+        const msg = `Not yet. ${why}`;
+        console.log(msg);
+        task.publishTask(t);
+        publishAnswer(msg, { question: c.text, followUp: true });
+        if (!argv.includes("--silent")) await speak(msg).catch(() => {});
+      }
+      return 0;
+    } catch (err) {
+      const { spoken, shown } = humanError(err, null);
+      console.error(`glance: ${shown}`);
+      publishError(shown, c.text);
+      if (!argv.includes("--silent")) await speak(spoken).catch(() => {});
+      return 1;
+    } finally {
+      setState("idle");
+    }
+  }
+
   if (argv[0] === "next") {
     const t = task.load();
     if (!t) {
@@ -198,6 +267,18 @@ async function main(): Promise<number> {
   }
 
   if (argv[0] === "repeat" || argv[0] === "last") {
+    // Mid-task, the thing worth repeating is the step you are on — not the
+    // summary you were given before you started. Repeating the old answer here
+    // is actively unhelpful, which is how this was found.
+    const live = task.load();
+    if (live) {
+      const line = task.spokenStep(live);
+      console.log(line);
+      publishAnswer(line, { question: live.title, followUp: true });
+      task.publishTask(live);
+      if (!argv.includes("--silent")) await speak(line).catch(() => {});
+      return 0;
+    }
     // Bring back the last answer. Spoken answers cannot be re-read and panels
     // time out, so without this a missed answer is simply gone — and the case
     // glance is best at, following steps, is exactly where you need it twice.
@@ -311,8 +392,15 @@ async function main(): Promise<number> {
       console.error(`glance: still waiting after ${Math.round(SLOW_AFTER_MS / 1000)}s — the network may be slow.`);
     }, SLOW_AFTER_MS);
 
+    // A live task travels with the question, so "what's left?" is answerable
+    // without a second call or the user repeating themselves.
+    // Any task loaded here predates this question — a new one is only created
+    // from the answer, further down.
+    const live = task.load();
+    const asked = live ? `${task.contextLine(live)}\n\n${question}` : question;
+
     const result = await provider.ask({
-      question,
+      question: asked,
       imagePath: shot?.path,
       maxWords: cfg.maxWords,
       resume: resuming ? prior!.ref : undefined,

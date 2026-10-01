@@ -59,7 +59,8 @@ reasoning and what was deliberately *not* built are in
 | **⌥⇧Space** | type a question, read the answer |
 | `glance "why is this failing?"` | from a terminal |
 | **⌥N** | tick the current step, move to the next |
-| **⌥R** | repeat the last answer |
+| **⌥⇧N** | look at the screen and check whether the step is actually done |
+| **⌥R** | repeat the last answer — or the current step, mid-task |
 | `glance --follow "and the one below?"` | follow up without a new screenshot |
 
 Answers match how you asked: **typed gets a panel, spoken gets both.** Someone
@@ -86,6 +87,18 @@ click for all · ⌥N next step
 
 Click the panel for the whole checklist. Only genuinely sequential answers — three
 or more actions in order — become tasks; *"what is this error?"* stays prose.
+
+**⌥⇧N checks your work.** glance takes a fresh screenshot and judges whether the
+current step actually happened, then advances or tells you what is still missing:
+
+> *"Not yet. The screen still shows VS Code and the local project, not a GitHub
+> repository page in a browser."*
+
+⌥N is free and instant — it trusts you. ⌥⇧N costs a capture and a round trip, so
+it is a separate key rather than something every step quietly pays for.
+
+While a task is running, glance knows where you are. Ask *"how many steps left?"*
+and it answers from the task, not the screen.
 
 It costs **no extra tokens**: the steps arrive in the same response as the
 answer, so a task-producing question measures the same ~59,000 as any other.

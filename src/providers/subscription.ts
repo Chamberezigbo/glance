@@ -41,7 +41,14 @@ export class SubscriptionProvider implements Provider {
     // resolves it without a broader permission scope.
     const cwd = req.imagePath ? dirname(req.imagePath) : sessionDir();
 
-    const prompt = resuming
+
+    // Resuming *with* a new image is the verification case: same conversation,
+    // but the screen has moved on and the point is to look at what changed.
+    const prompt = resuming && req.imagePath
+      ? `Same conversation, but here is a FRESH screenshot of the user's screen taken just now.\n\n` +
+        `Read the image file ${basename(req.imagePath)} in the current directory. It replaces the earlier one.\n\n` +
+        `The user asks: ${req.question}`
+      : resuming
       // The image is already in this conversation. Saying so explicitly stops
       // the model reaching for the Read tool again, which would cost a turn.
       ? `Still about the same screenshot, which you have already seen — do not read it again.\n\n` +
