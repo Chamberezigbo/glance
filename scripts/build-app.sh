@@ -12,8 +12,13 @@ APP="$ROOT/bin/glance.app"
 
 swiftc -O "$ROOT/native/cursor-display.swift" -o "$ROOT/bin/cursor-display"
 
-rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS"
+# Build beside the live bundle and swap at the end. Deleting it in place means
+# launchd keeps trying to spawn a binary that is not there, and after a few
+# failures it throttles the job and refuses to start it for a while.
+STAGE="$(mktemp -d)/glance.app"
+mkdir -p "$STAGE/Contents/MacOS"
+APP_FINAL="$APP"
+APP="$STAGE"
 swiftc -O "$ROOT/native/glance-hotkey.swift" -o "$APP/Contents/MacOS/glance"
 cp "$ROOT/native/Info.plist" "$APP/Contents/Info.plist"
 
@@ -37,4 +42,7 @@ else
   echo "signed ad-hoc — permissions will reset on every rebuild."
   echo "   Run: bash scripts/make-signing-cert.sh   to fix this permanently."
 fi
-echo "built: $APP"
+rm -rf "$APP_FINAL"
+mkdir -p "$(dirname "$APP_FINAL")"
+mv "$STAGE" "$APP_FINAL"
+echo "built: $APP_FINAL"

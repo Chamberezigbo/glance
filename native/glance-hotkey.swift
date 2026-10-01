@@ -38,6 +38,25 @@ enum State: String {
     }
 }
 
+/// A text box that submits on Return and grows to fit what you type.
+///
+/// The original was a single-line NSTextField: long questions scrolled sideways
+/// and everything already typed disappeared, so you could not read back what you
+/// had written before sending it.
+final class QuestionTextView: NSTextView {
+    var onSubmit: (() -> Void)?
+
+    override func keyDown(with event: NSEvent) {
+        // Return sends. Shift-Return inserts a line break, for the rare question
+        // that wants one.
+        if event.keyCode == 36 && !event.modifierFlags.contains(.shift) {
+            onSubmit?()
+            return
+        }
+        super.keyDown(with: event)
+    }
+}
+
 /// A small panel of text near the cursor.
 ///
 /// Non-activating, so it never steals focus from what you are working in —
@@ -380,13 +399,37 @@ final class App: NSObject, NSApplicationDelegate {
         alert.addButton(withTitle: "Ask")
         alert.addButton(withTitle: "Cancel")
 
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 320, height: 24))
-        field.placeholderString = "what is this error telling me?"
-        alert.accessoryView = field
-        alert.window.initialFirstResponder = field
+        // A scrolling, wrapping text view rather than a single-line field, so a
+        // long question stays visible instead of scrolling out of sight.
+        let width: CGFloat = 360, height: CGFloat = 92
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: width, height: height))
+        scroll.hasVerticalScroller = true
+        scroll.borderType = .bezelBorder
+        scroll.autohidesScrollers = true
+
+        let text = QuestionTextView(frame: NSRect(x: 0, y: 0, width: width, height: height))
+        text.minSize = NSSize(width: 0, height: height)
+        text.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        text.isVerticallyResizable = true
+        text.isHorizontallyResizable = false
+        text.autoresizingMask = [.width]
+        text.textContainer?.containerSize = NSSize(width: width, height: CGFloat.greatestFiniteMagnitude)
+        text.textContainer?.widthTracksTextView = true
+        text.font = NSFont.systemFont(ofSize: 13)
+        text.isRichText = false
+        text.isAutomaticQuoteSubstitutionEnabled = false
+        text.textContainerInset = NSSize(width: 4, height: 6)
+        text.onSubmit = { [weak alert] in
+            // Drive the default button, so Return behaves exactly like clicking Ask.
+            alert?.buttons.first?.performClick(nil)
+        }
+        scroll.documentView = text
+
+        alert.accessoryView = scroll
+        alert.window.initialFirstResponder = text
 
         guard alert.runModal() == .alertFirstButtonReturn else { return }
-        let question = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let question = text.string.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !question.isEmpty else { return }
 
         // Single-quote safely: the question goes through bash -lc.
