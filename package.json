@@ -22,7 +22,8 @@
     "agent:install": "bash scripts/install-agent.sh",
     "agent:uninstall": "bash scripts/uninstall-agent.sh",
     "setup:cert": "bash scripts/make-signing-cert.sh",
-    "setup:icon": "bash scripts/build-icon.sh"
+    "setup:icon": "bash scripts/build-icon.sh",
+    "demo": "bash scripts/record-demo.sh"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.70.0"
