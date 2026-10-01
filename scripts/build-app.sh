@@ -16,6 +16,12 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 swiftc -O "$ROOT/native/glance-hotkey.swift" -o "$APP/Contents/MacOS/glance"
 cp "$ROOT/native/Info.plist" "$APP/Contents/Info.plist"
+
+# An app that asks to see your screen should not appear anonymous in the
+# permission list. Build the icon if it is missing, then install it.
+[ -f "$ROOT/native/icon/glance.icns" ] || bash "$ROOT/scripts/build-icon.sh"
+mkdir -p "$APP/Contents/Resources"
+cp "$ROOT/native/icon/glance.icns" "$APP/Contents/Resources/glance.icns"
 # Prefer a stable identity. Ad-hoc signatures are a hash of the binary, so they
 # change on every build and macOS silently drops the Screen Recording and
 # Microphone grants each time. See scripts/make-signing-cert.sh.

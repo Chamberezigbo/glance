@@ -426,6 +426,35 @@ cannot be re-read.
 `~/.glance/config.json` overrides it permanently (`both`, `voice`, `popup`,
 `none`).
 
+## Icon
+
+An eye whose iris is a screen.
+
+An eye on its own is generic — every monitoring tool uses one, and it reads as
+surveillance, which is the opposite of what glance does. Putting a display
+inside the pupil says what it actually looks at, and a single open eye says it
+looks once rather than watching continuously.
+
+**It is drawn in code** (`native/icon/make-icon.swift`), not exported from a
+design tool, because **each size needs its own artwork**:
+
+- **Below 48px** the outlined eye and its iris merge into an unreadable blob —
+  there are not enough pixels to hold the gap open. Small sizes draw a *solid*
+  eye with the screen knocked out of it instead.
+- **64px and up** use the lighter outline, with a glint punched out of the
+  screen that doubles as a pupil highlight and a display reflection.
+
+Both holes are even-odd fills rather than cleared regions: clearing punches
+through to transparency, which is invisible against a light background. That
+bug made the pupil vanish entirely at small sizes until it was caught by
+blowing the 16px render up and actually looking at it.
+
+This is not only decoration. glance previously appeared **anonymous in the
+Screen Recording permission list**, and an unnamed, unillustrated app asking to
+watch your screen is exactly what a cautious person should refuse.
+
+Rebuild with `npm run setup:icon`; `build-app.sh` installs it automatically.
+
 ## Phase 7 (proposed) — "Hey glance" wake word
 
 Wake it by voice instead of reaching for a hotkey. Costs **zero tokens**:

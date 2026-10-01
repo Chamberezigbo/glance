@@ -21,7 +21,8 @@
     "setup:hotkey": "bash scripts/build-app.sh",
     "agent:install": "bash scripts/install-agent.sh",
     "agent:uninstall": "bash scripts/uninstall-agent.sh",
-    "setup:cert": "bash scripts/make-signing-cert.sh"
+    "setup:cert": "bash scripts/make-signing-cert.sh",
+    "setup:icon": "bash scripts/build-icon.sh"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.70.0"
