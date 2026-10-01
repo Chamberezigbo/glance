@@ -20,6 +20,13 @@ RAW="$OUT/demo-raw.mov"
 
 echo "==> recording display $DISPLAY_INDEX for ${SECONDS_TO_RECORD}s"
 echo "    the question runs automatically; just do not move windows around"
+echo
+echo "    Before this starts, make sure the screen shows what you want a"
+echo "    stranger to see: one real problem, no private windows, and nothing"
+echo "    you would not publish. This frame is the most-viewed part of the repo."
+echo
+for i in 5 4 3 2 1; do printf "\r    starting in %ds... " "$i"; sleep 1; done
+echo; echo
 rm -f "$RAW"
 # -v records video, -V caps the duration, -x stays silent, -D picks the display.
 screencapture -v -V "$SECONDS_TO_RECORD" -x -D "$DISPLAY_INDEX" "$RAW" &
@@ -47,7 +54,12 @@ ffmpeg -nostdin -loglevel error -i "$RAW" \
   -vf "scale=1280:-2" -c:v libx264 -pix_fmt yuv420p -crf 26 -movflags +faststart \
   -an -y "$OUT/demo.mp4"
 
-rm -f "$RAW"
+# Keep the raw recording if either encode failed — re-shooting is expensive.
+if [ -s "$OUT/demo.gif" ] && [ "$(stat -f%z "$OUT/demo.mp4" 2>/dev/null || echo 0)" -gt 100000 ]; then
+  rm -f "$RAW"
+else
+  echo "!! an encode looked wrong — keeping $RAW so it can be redone"
+fi
 echo
 echo "done:"
 ls -lh "$OUT"/demo.* | awk '{print "  " $9 "  " $5}'
