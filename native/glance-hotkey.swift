@@ -67,7 +67,7 @@ final class AnswerPanel {
     private var panel: NSPanel?
     private var dismissTimer: Timer?
 
-    func show(_ text: String, near point: NSPoint) {
+    func show(_ text: String, near point: NSPoint, isError: Bool = false) {
         hide()
 
         let font = NSFont.systemFont(ofSize: 14)
@@ -76,7 +76,9 @@ final class AnswerPanel {
 
         let label = NSTextField(wrappingLabelWithString: text)
         label.font = font
-        label.textColor = .labelColor
+        // Failures read in the system's warning colour, so a problem is obvious
+        // before a word of it is read.
+        label.textColor = isError ? .systemRed : .labelColor
         label.isSelectable = true          // so an identifier can be copied out
         label.preferredMaxLayoutWidth = maxWidth - inset * 2
         label.setFrameSize(label.fittingSize)
@@ -119,7 +121,9 @@ final class AnswerPanel {
         // Long answers need longer on screen. Roughly 200 words per minute,
         // floored so a three-word answer does not vanish before it is seen.
         let words = text.split(separator: " ").count
-        let seconds = max(4.0, min(30.0, Double(words) / 200.0 * 60.0 + 2.5))
+        // Errors stay longer: they usually name a fix worth reading twice.
+        let base = max(4.0, min(30.0, Double(words) / 200.0 * 60.0 + 2.5))
+        let seconds = isError ? max(base, 12.0) : base
         dismissTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
             self?.hide()
         }
@@ -288,8 +292,10 @@ final class App: NSObject, NSApplicationDelegate {
               let at = obj["at"] as? Double,
               at > lastAnswerAt else { return }
         lastAnswerAt = at
+        let isError = (obj["isError"] as? Bool) ?? false
         DispatchQueue.main.async { [weak self] in
-            self?.answerPanel.show(text, near: NSEvent.mouseLocation)
+            self?.answerPanel.show(text, near: NSEvent.mouseLocation, isError: isError)
+            if isError { NSSound.beep() }
         }
     }
 

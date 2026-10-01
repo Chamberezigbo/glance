@@ -71,11 +71,16 @@ subscription path cannot support it, and no amount of hashing changes that.
 
 Small, real, and worth fixing before anyone else uses this.
 
+**Fixed:** failures used to reach only the log file, so the icon returned to
+idle in silence and a broken glance was indistinguishable from an ignored one —
+which is how fifteen consecutive failures went unnoticed during the permission
+work. Errors now appear in the panel in red, beep, and are spoken in plain
+language when the question was asked out loud.
+
 | Issue | Effect |
 |---|---|
 | Hotkey path only speaks the answer | Text goes to `glance.log`; nothing to re-read or copy |
 | Word cap is advisory | The model runs over it; truncating would cut mid-sentence, so it warns instead |
-| No error is spoken | If a glance fails, the icon returns to idle in silence — easy to read as "it ignored me" |
 | whisper-server is never shut down | Stays resident holding 141 MB until the machine restarts |
 | `--keep` semantics | Now that the session directory is stable, the flag only controls whether the raw shot is deleted |
 

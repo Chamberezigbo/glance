@@ -35,7 +35,10 @@ export function answerMode(askedByVoice: boolean): AnswerMode {
  * Written as a file rather than printed, because the hotkey path runs detached
  * with its output redirected to a log — there is no terminal to read.
  */
-export function publishAnswer(text: string, meta: { question: string; followUp: boolean }): void {
+export function publishAnswer(
+  text: string,
+  meta: { question: string; followUp: boolean; isError?: boolean },
+): void {
   try {
     mkdirSync(join(homedir(), ".glance"), { recursive: true });
     writeFileSync(
@@ -45,4 +48,50 @@ export function publishAnswer(text: string, meta: { question: string; followUp: 
   } catch {
     // Display is a convenience; never let it break an answer.
   }
+}
+
+/**
+ * Report a failure the same way an answer is reported.
+ *
+ * A failure that only writes to a log file is indistinguishable from being
+ * ignored: the icon returns to idle and nothing happens. That is how fifteen
+ * consecutive failures went unnoticed while a permission was silently denied.
+ * Whatever went wrong, the user should be told — and told what to do about it.
+ */
+export function publishError(message: string, question: string): void {
+  publishAnswer(message, { question, followUp: false, isError: true });
+}
+
+/**
+ * Turn an internal error into something worth reading aloud.
+ *
+ * The underlying messages already name their fix; this keeps the first sentence
+ * short, because that is the part that gets spoken.
+ */
+export function humanError(err: unknown): { spoken: string; shown: string } {
+  const raw = err instanceof Error ? err.message : String(err);
+  const first = raw.split("\n")[0] ?? raw;
+
+  if (/Screen Recording/i.test(raw)) {
+    return {
+      spoken: "I can't see your screen. Screen Recording permission is turned off.",
+      shown: raw,
+    };
+  }
+  if (/[Mm]icrophone|No microphone|Recording produced no audio/.test(raw)) {
+    return {
+      spoken: "I couldn't hear anything. Check the microphone permission.",
+      shown: raw,
+    };
+  }
+  if (/whisper|setup:models|setup:whisper/i.test(raw)) {
+    return { spoken: "Speech recognition isn't set up yet.", shown: raw };
+  }
+  if (/ANTHROPIC_API_KEY|claude CLI|Claude Code CLI/i.test(raw)) {
+    return { spoken: "I can't reach a model. Check your API key or Claude login.", shown: raw };
+  }
+  if (/heard nothing|no question/i.test(raw)) {
+    return { spoken: "I didn't catch that. Try again.", shown: raw };
+  }
+  return { spoken: `Something went wrong. ${first}`, shown: raw };
 }

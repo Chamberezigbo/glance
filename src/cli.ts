@@ -9,7 +9,7 @@ import { speak, bestVoice } from "./speak.js";
 import { listen, setState, calibrate } from "./listen.js";
 import { greet, greetingText } from "./greet.js";
 import * as session from "./session.js";
-import { answerMode, publishAnswer } from "./answer.js";
+import { answerMode, publishAnswer, publishError, humanError } from "./answer.js";
 
 const USAGE = `
 glance — ask a question about what is on your screen
@@ -180,7 +180,10 @@ async function main(): Promise<number> {
       });
       question = heard.text;
       if (!question) {
-        console.error("glance: heard nothing. Try again, or type the question instead.");
+        const msg = "I didn't catch that. Try again, or type the question instead.";
+        console.error(`glance: ${msg}`);
+        publishError(msg, "");
+        if (answerMode(true) !== "popup") await speak(msg).catch(() => {});
         return 1;
       }
       console.error(`heard: "${question}"\n`);
@@ -259,7 +262,14 @@ async function main(): Promise<number> {
     if (keep && shot) console.error(`\nscreenshot: ${shot.path}`);
     return 0;
   } catch (err) {
-    console.error(`glance: ${err instanceof Error ? err.message : String(err)}`);
+    // Say something. A failure that only reaches a log file is indistinguishable
+    // from being ignored, which is the single worst way for this to behave.
+    const { spoken, shown } = humanError(err);
+    console.error(`glance: ${shown}`);
+    publishError(shown, typed);
+    if (doListen && answerMode(true) !== "popup") {
+      await speak(spoken).catch(() => {});
+    }
     return 1;
   } finally {
     setState("idle");
