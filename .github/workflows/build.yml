@@ -1,0 +1,28 @@
+# Typecheck and build on every push.
+#
+# No runtime tests: glance's behaviour depends on a microphone, a screen, and
+# macOS permissions that CI cannot grant. A green tick here means it compiles,
+# nothing more — claiming otherwise would be worse than having no badge.
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Typecheck and compile
+        run: npx tsc --noEmit
+      - name: Compile the Swift helpers
+        run: |
+          swiftc -O native/cursor-display.swift -o /tmp/cursor-display
+          swiftc -O native/glance-hotkey.swift -o /tmp/glance-hotkey
+          swiftc -O native/icon/make-icon.swift -o /tmp/make-icon

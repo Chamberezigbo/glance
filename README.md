@@ -1,5 +1,9 @@
 # glance
 
+[![build](https://github.com/Chamberezigbo/glance/actions/workflows/build.yml/badge.svg)](https://github.com/Chamberezigbo/glance/actions/workflows/build.yml)
+[![licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
+![macOS 13+](https://img.shields.io/badge/macOS-13%2B-lightgrey)
+
 **Ask your Mac what's on your screen. Out loud, or by typing. Get an answer in seconds.**
 
 Press a key, ask *"what is this error telling me?"*, and glance looks at your
@@ -138,6 +142,13 @@ Windows or Linux support. The reasoning for each is in
 
 A sibling repo. anvil is a coding harness with a local-model router; glance uses
 Claude itself. They share no code and solve opposite problems.
+
+## Contributing
+
+Issues and PRs welcome — [CONTRIBUTING.md](CONTRIBUTING.md) first, especially
+the three decisions that will not change without a strong argument.
+[SECURITY.md](SECURITY.md) sets out exactly what glance can see and what leaves
+your machine.
 
 ## Licence
 
