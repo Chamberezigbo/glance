@@ -20,6 +20,8 @@ glance — ask a question about what is on your screen
   glance doctor                               check this machine is set up
   glance calibrate                            measure your room, so it stops
                                               cutting you off mid-sentence
+  glance repeat                               show and speak the last answer
+                                              again (⌥R, or the menu bar)
   glance greet --force                        hear the login greeting now
 
 Environment
@@ -118,6 +120,31 @@ async function main(): Promise<number> {
   const argv = process.argv.slice(2);
 
   if (argv[0] === "doctor") return doctor();
+  if (argv[0] === "repeat" || argv[0] === "last") {
+    // Bring back the last answer. Spoken answers cannot be re-read and panels
+    // time out, so without this a missed answer is simply gone — and the case
+    // glance is best at, following steps, is exactly where you need it twice.
+    try {
+      const { readFileSync } = await import("node:fs");
+      const { homedir } = await import("node:os");
+      const p = join(homedir(), ".glance", "answer.json");
+      const last = JSON.parse(readFileSync(p, "utf8"));
+      if (!last.text) throw new Error("empty");
+      console.log(last.text);
+      // Re-stamp so the daemon treats it as new and shows it again.
+      publishAnswer(last.text, {
+        question: last.question ?? "",
+        followUp: Boolean(last.followUp),
+        isError: Boolean(last.isError),
+      });
+      if (!argv.includes("--silent")) await speak(last.text).catch(() => {});
+      return 0;
+    } catch {
+      const msg = "Nothing to repeat yet.";
+      console.error(`glance: ${msg}`);
+      return 1;
+    }
+  }
   if (argv[0] === "greet") {
     const force = argv.includes("--force");
     const spoken = await greet({ force });

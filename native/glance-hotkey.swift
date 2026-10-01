@@ -63,9 +63,156 @@ final class QuestionTextView: NSTextView {
 /// which matters because the answer is usually about that window. Floating
 /// level, so it sits above normal windows without being a screen overlay.
 /// No permission of any kind: this is an ordinary window, drawn by us.
+/// A badge beside the cursor while glance is working.
+///
+/// Deliberately tiny — about the size of the pointer itself. Between pressing
+/// the hotkey and hearing anything there is a long pause, and showing nothing
+/// during it feels broken rather than busy. But a panel of text for "Thinking…"
+/// is too much furniture for a wait: it covers what you are looking at and
+/// says nothing you did not already know. A small pulsing dot is enough to mean
+/// "it heard you", and gets out of the way.
+final class StatusBadge {
+    private var panel: NSPanel?
+    private var icon: NSImageView?
+    private var pulse: Timer?
+    private var phase = ""
+
+    private let size: CGFloat = 26
+
+    func show(_ newPhase: String) {
+        guard newPhase != phase else { return }
+        phase = newPhase
+
+        let symbol: String = {
+            switch newPhase {
+            case "listening": return "waveform"
+            case "speaking":  return "speaker.wave.2.fill"
+            default:          return "ellipsis"
+            }
+        }()
+
+        if panel == nil { build() }
+        icon?.image = NSImage(systemSymbolName: symbol, accessibilityDescription: newPhase)
+        reposition()
+        startPulse()
+    }
+
+    func hide() {
+        phase = ""
+        pulse?.invalidate(); pulse = nil
+        guard let p = panel else { return }
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.15
+            p.animator().alphaValue = 0
+        }, completionHandler: { [weak self] in
+            self?.panel?.orderOut(nil); self?.panel = nil; self?.icon = nil
+        })
+    }
+
+    private func build() {
+        let p = NSPanel(contentRect: NSRect(x: 0, y: 0, width: size, height: size),
+                        styleMask: [.borderless, .nonactivatingPanel],
+                        backing: .buffered, defer: false)
+        p.level = .floating
+        p.isOpaque = false
+        p.backgroundColor = .clear
+        p.hasShadow = true
+        p.ignoresMouseEvents = true      // never in the way of a click
+        p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        p.alphaValue = 0
+
+        let blur = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: size, height: size))
+        blur.material = .hudWindow
+        blur.blendingMode = .behindWindow
+        blur.state = .active
+        blur.wantsLayer = true
+        blur.layer?.cornerRadius = size / 2   // a circle, so it reads as a badge
+        blur.layer?.masksToBounds = true
+
+        let iv = NSImageView(frame: NSRect(x: 5, y: 5, width: size - 10, height: size - 10))
+        iv.imageScaling = .scaleProportionallyUpOrDown
+        iv.contentTintColor = .labelColor
+        blur.addSubview(iv)
+
+        p.contentView = blur
+        p.orderFrontRegardless()
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.12
+            p.animator().alphaValue = 1
+        }
+        panel = p; icon = iv
+    }
+
+    /// Sit just below-right of the pointer, like a cursor badge, and stay on
+    /// whichever screen the pointer is on.
+    private func reposition() {
+        guard let p = panel else { return }
+        let m = NSEvent.mouseLocation
+        var origin = NSPoint(x: m.x + 14, y: m.y - size - 10)
+        let screen = NSScreen.screens.first { $0.frame.contains(m) } ?? NSScreen.main
+        if let vf = screen?.visibleFrame {
+            origin.x = min(max(vf.minX + 4, origin.x), vf.maxX - size - 4)
+            origin.y = min(max(vf.minY + 4, origin.y), vf.maxY - size - 4)
+        }
+        p.setFrameOrigin(origin)
+    }
+
+    /// A slow breathing fade, so a sixteen-second wait still looks alive.
+    private func startPulse() {
+        pulse?.invalidate()
+        var up = false
+        pulse = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: true) { [weak self] _ in
+            guard let iv = self?.icon else { return }
+            up.toggle()
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.55
+                iv.animator().alphaValue = up ? 1.0 : 0.4
+            }
+            self?.reposition()
+        }
+    }
+}
+
+/// The answer panel's content view.
+///
+/// Hovering pauses the countdown and clicking pins the panel open. Both exist
+/// because an answer that disappears while you are still acting on it is the
+/// worst failure this tool has: the information is gone, and spoken text cannot
+/// be re-read. Following steps is exactly what glance is best at, and exactly
+/// where a four-second timeout hurts most.
+final class PanelView: NSVisualEffectView {
+    var onHover: ((Bool) -> Void)?
+    var onClick: (() -> Void)?
+    private var tracking: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let t = tracking { removeTrackingArea(t) }
+        let t = NSTrackingArea(rect: bounds,
+                               options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                               owner: self, userInfo: nil)
+        addTrackingArea(t)
+        tracking = t
+    }
+
+    override func mouseEntered(with event: NSEvent) { onHover?(true) }
+    override func mouseExited(with event: NSEvent)  { onHover?(false) }
+    override func mouseDown(with event: NSEvent)    { onClick?() }
+}
+
 final class AnswerPanel {
     private var panel: NSPanel?
     private var dismissTimer: Timer?
+    private var pinned = false
+    private var hovering = false
+
+    private func armDismiss(after seconds: Double) {
+        dismissTimer?.invalidate()
+        dismissTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
+            guard let self, !self.pinned, !self.hovering else { return }
+            self.hide()
+        }
+    }
 
     func show(_ text: String, near point: NSPoint, isError: Bool = false) {
         hide()
@@ -84,7 +231,7 @@ final class AnswerPanel {
         label.setFrameSize(label.fittingSize)
 
         let w = min(maxWidth, label.frame.width + inset * 2)
-        let h = label.frame.height + inset * 2
+        let h = label.frame.height + inset * 2 + 14   // room for the hint line
 
         // Keep it fully on whichever screen the cursor is on.
         let screen = NSScreen.screens.first { $0.frame.contains(point) } ?? NSScreen.main
@@ -104,7 +251,7 @@ final class AnswerPanel {
         p.ignoresMouseEvents = false
         p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
 
-        let blur = NSVisualEffectView(frame: NSRect(x: 0, y: 0, width: w, height: h))
+        let blur = PanelView(frame: NSRect(x: 0, y: 0, width: w, height: h))
         blur.material = .hudWindow
         blur.blendingMode = .behindWindow
         blur.state = .active
@@ -112,7 +259,32 @@ final class AnswerPanel {
         blur.layer?.cornerRadius = 12
         blur.layer?.masksToBounds = true
 
-        label.setFrameOrigin(NSPoint(x: inset, y: inset))
+        // Hovering holds it open. Standard behaviour for anything that
+        // auto-dismisses, and invisible until you need it.
+        blur.onHover = { [weak self] inside in
+            guard let self else { return }
+            self.hovering = inside
+            if inside { self.dismissTimer?.invalidate() }
+            else if !self.pinned { self.armDismiss(after: 3.0) }
+        }
+        // Clicking pins it until clicked again. A thin border marks the state,
+        // so a pinned panel does not look like one that forgot to close.
+        blur.onClick = { [weak self] in
+            guard let self else { return }
+            self.pinned.toggle()
+            blur.layer?.borderWidth = self.pinned ? 1.5 : 0
+            blur.layer?.borderColor = NSColor.controlAccentColor.cgColor
+            if self.pinned { self.dismissTimer?.invalidate() } else { self.armDismiss(after: 3.0) }
+        }
+
+        let hint = NSTextField(labelWithString: "click to keep · ⌥R to repeat")
+        hint.font = NSFont.systemFont(ofSize: 10)
+        hint.textColor = .tertiaryLabelColor
+        hint.sizeToFit()
+        hint.setFrameOrigin(NSPoint(x: inset, y: 5))
+        blur.addSubview(hint)
+
+        label.setFrameOrigin(NSPoint(x: inset, y: inset + 12))
         blur.addSubview(label)
         p.contentView = blur
         p.orderFrontRegardless()
@@ -124,14 +296,14 @@ final class AnswerPanel {
         // Errors stay longer: they usually name a fix worth reading twice.
         let base = max(4.0, min(30.0, Double(words) / 200.0 * 60.0 + 2.5))
         let seconds = isError ? max(base, 12.0) : base
-        dismissTimer = Timer.scheduledTimer(withTimeInterval: seconds, repeats: false) { [weak self] _ in
-            self?.hide()
-        }
+        armDismiss(after: seconds)
     }
 
     func hide() {
         dismissTimer?.invalidate()
         dismissTimer = nil
+        pinned = false
+        hovering = false
         panel?.orderOut(nil)
         panel = nil
     }
@@ -141,6 +313,7 @@ final class App: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var hotKeyRef: EventHotKeyRef?
     private var typeHotKeyRef: EventHotKeyRef?
+    private var repeatHotKeyRef: EventHotKeyRef?
     private var running = false
     private let repoRoot: String
 
@@ -174,9 +347,10 @@ final class App: NSObject, NSApplicationDelegate {
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "Ask out loud", action: #selector(trigger), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Type a question…", action: #selector(askTyped), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "Repeat last answer", action: #selector(repeatLast), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "New conversation", action: #selector(newConversation), keyEquivalent: ""))
         menu.addItem(.separator())
-        for text in ["⌥Space — ask out loud", "⌥⇧Space — type a question"] {
+        for text in ["⌥Space — ask out loud", "⌥⇧Space — type a question", "⌥R — repeat last answer"] {
             let hint = NSMenuItem(title: text, action: nil, keyEquivalent: "")
             hint.isEnabled = false
             menu.addItem(hint)
@@ -260,6 +434,8 @@ final class App: NSObject, NSApplicationDelegate {
 
     private var stateTimer: Timer?
     private let answerPanel = AnswerPanel()
+    private let badge = StatusBadge()
+    private var lastPhase = ""
     private var lastAnswerAt: Double = 0
 
     private var answerWatch: Timer?
@@ -270,7 +446,10 @@ final class App: NSObject, NSApplicationDelegate {
     /// the panel just as much. Polling a small file twice a second is cheaper
     /// than an FSEvents stream and simpler to reason about.
     private func watchForAnswers() {
-        answerWatch = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+        // Quarter-second, because this also drives the badge: any slower and
+        // the gap between pressing the key and seeing anything feels dead.
+        answerWatch = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+            self?.pollPhase()
             self?.showAnswerIfNew()
         }
         // Ignore whatever is already on disk, so restarting does not replay the
@@ -280,6 +459,32 @@ final class App: NSObject, NSApplicationDelegate {
            let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            let at = obj["at"] as? Double {
             lastAnswerAt = at
+        }
+    }
+
+    /// Follow the phase the CLI reports, and show the badge while it works.
+    ///
+    /// A stale file is ignored: if a run is killed the phase never returns to
+    /// idle, and a badge that sat beside the cursor forever would be worse than
+    /// none at all.
+    private func pollPhase() {
+        let path = (NSHomeDirectory() as NSString).appendingPathComponent(".glance/state")
+        guard let raw = try? String(contentsOfFile: path, encoding: .utf8) else { return }
+        let phase = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: path),
+           let modified = attrs[.modificationDate] as? Date,
+           Date().timeIntervalSince(modified) > 120 {
+            badge.hide()
+            return
+        }
+        guard phase != lastPhase else { return }
+        lastPhase = phase
+
+        setState(State(rawValue: phase) ?? .idle)
+        switch phase {
+        case "listening", "thinking", "speaking": badge.show(phase)
+        default: badge.hide()
         }
     }
 
@@ -294,6 +499,7 @@ final class App: NSObject, NSApplicationDelegate {
         lastAnswerAt = at
         let isError = (obj["isError"] as? Bool) ?? false
         DispatchQueue.main.async { [weak self] in
+            self?.badge.hide()
             self?.answerPanel.show(text, near: NSEvent.mouseLocation, isError: isError)
             if isError { NSSound.beep() }
         }
@@ -375,7 +581,11 @@ final class App: NSObject, NSApplicationDelegate {
                               EventParamType(typeEventHotKeyID), nil,
                               MemoryLayout<EventHotKeyID>.size, nil, &hkID)
             let app = Unmanaged<App>.fromOpaque(userData).takeUnretainedValue()
-            if hkID.id == 2 { app.askTyped() } else { app.trigger() }
+            switch hkID.id {
+            case 2:  app.askTyped()
+            case 3:  app.repeatLast()
+            default: app.trigger()
+            }
             return noErr
         }, 1, &eventType, Unmanaged.passUnretained(self).toOpaque(), nil)
 
@@ -390,8 +600,14 @@ final class App: NSObject, NSApplicationDelegate {
                                      typeID, GetApplicationEventTarget(), 0, &typeHotKeyRef)
         log(s1 == noErr ? "⌥Space registered (voice), no permissions required"
                         : "could not register ⌥Space (error \(s1))")
+        // ⌥R — bring the last answer back. Mnemonic, and nothing else uses it.
+        let repeatID = EventHotKeyID(signature: OSType(0x474C4E43 /* GLNC */), id: 3)
+        let s3 = RegisterEventHotKey(UInt32(kVK_ANSI_R), UInt32(optionKey),
+                                     repeatID, GetApplicationEventTarget(), 0, &repeatHotKeyRef)
         log(s2 == noErr ? "⌥⇧Space registered (typed)"
                         : "could not register ⌥⇧Space (error \(s2))")
+        log(s3 == noErr ? "⌥R registered (repeat last answer)"
+                        : "could not register ⌥R (error \(s3))")
     }
 
     /// Ask by typing: a small panel instead of the microphone.
@@ -444,6 +660,17 @@ final class App: NSObject, NSApplicationDelegate {
     }
 
     /// Drop the current conversation, so the next question captures afresh.
+    /// Show and speak the last answer again.
+    ///
+    /// Allowed to run even while a glance is in flight: wanting the previous
+    /// answer back is most likely precisely when you are busy acting on it.
+    @objc func repeatLast() {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/bash")
+        task.arguments = ["-lc", "cd '\(repoRoot)' && ./bin/glance-run --repeat"]
+        try? task.run()
+    }
+
     @objc func newConversation() {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/bin/bash")
