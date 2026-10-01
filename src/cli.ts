@@ -9,6 +9,7 @@ import { speak, bestVoice } from "./speak.js";
 import { listen, setState, calibrate } from "./listen.js";
 import { greet, greetingText } from "./greet.js";
 import * as session from "./session.js";
+import * as task from "./task.js";
 import { answerMode, publishAnswer, publishError, humanError } from "./answer.js";
 
 const USAGE = `
@@ -22,6 +23,13 @@ glance — ask a question about what is on your screen
                                               cutting you off mid-sentence
   glance repeat                               show and speak the last answer
                                               again (⌥R, or the menu bar)
+  glance next                                 tick the current step, move to the
+                                              next one (⌥N)
+  glance task                                 show the checklist
+  glance task clear | restore                 drop it, or bring it back
+
+Big multi-step answers become a checklist you work through one step at a time.
+Small questions stay plain prose.
   glance greet --force                        hear the login greeting now
 
 Environment
@@ -120,6 +128,49 @@ async function main(): Promise<number> {
   const argv = process.argv.slice(2);
 
   if (argv[0] === "doctor") return doctor();
+  if (argv[0] === "next") {
+    const t = task.load();
+    if (!t) {
+      console.error("glance: no task in progress.");
+      return 1;
+    }
+    const { task: updated, step, finished } = task.advance(t);
+    if (finished) {
+      const msg = `Done — that was the last step of ${t.steps.length}.`;
+      console.log(msg);
+      publishAnswer(msg, { question: t.question, followUp: false });
+      task.publishTask(null);
+      if (!argv.includes("--silent")) await speak(msg).catch(() => {});
+      return 0;
+    }
+    console.log(step!);
+    task.publishTask(updated!);
+    publishAnswer(task.spokenStep(updated!), { question: t.question, followUp: true });
+    if (!argv.includes("--silent")) await speak(task.spokenStep(updated!)).catch(() => {});
+    return 0;
+  }
+
+  if (argv[0] === "task") {
+    const sub = argv[1];
+    if (sub === "clear") {
+      task.clear();
+      task.publishTask(null);
+      console.log("Task cleared. `glance task restore` brings it back.");
+      return 0;
+    }
+    if (sub === "restore") {
+      const t = task.restore();
+      if (!t) { console.error("glance: nothing to restore."); return 1; }
+      task.publishTask(t);
+      console.log(task.render(t));
+      return 0;
+    }
+    const t = task.load();
+    if (!t) { console.error("glance: no task in progress."); return 1; }
+    console.log(task.render(t));
+    return 0;
+  }
+
   if (argv[0] === "repeat" || argv[0] === "last") {
     // Bring back the last answer. Spoken answers cannot be re-read and panels
     // time out, so without this a missed answer is simply gone — and the case
@@ -244,25 +295,46 @@ async function main(): Promise<number> {
       });
     }
 
-    console.log(result.answer);
+    // Some answers are sequences, not explanations. Split them before anything
+    // is spoken or shown — the marker block must never reach either.
+    const { prose, steps } = task.parseSteps(result.answer);
+
+    let started: task.Task | null = null;
+    if (steps.length > 0 && !resuming) {
+      // A new question replaces any task in progress, archived so it can be
+      // restored. A follow-up never does: it is a clarifying question about the
+      // work already under way.
+      const replaced = task.load();
+      if (replaced) task.clear();
+      started = task.create({ title: question, steps, question });
+      task.save(started);
+      task.publishTask(started);
+      if (replaced) console.error("glance: replaced the previous task (`glance task restore` undoes this).");
+    }
+
+    console.log(started ? `${prose}\n\n${task.render(started)}` : prose);
 
     const mode = answerMode(doListen);
     if (mode === "both" || mode === "popup") {
-      publishAnswer(result.answer, { question, followUp: resuming });
+      publishAnswer(prose, { question, followUp: resuming });
     }
 
     let speakMs = 0;
     if (mode === "both" || mode === "voice") {
       setState("speaking");
       const s0 = performance.now();
-      await speak(result.answer, cfg.voice ?? (await bestVoice()));
+      // Never read a checklist aloud. At the measured 2.9 words/second, six
+      // steps is over a minute of audio and unusable. The prose says what the
+      // task involves; only the step you are on gets spoken.
+      const toSay = started ? `${prose} ${task.spokenStep(started)}` : prose;
+      await speak(toSay, cfg.voice ?? (await bestVoice()));
       speakMs = performance.now() - s0;
     }
 
     // The word cap is a time budget, so a breach is worth seeing rather than
     // silently tolerating. Truncating the answer would cut it mid-sentence,
     // which is worse than being a few words long.
-    const words = result.answer.split(/\s+/).filter(Boolean).length;
+    const words = prose.split(/\s+/).filter(Boolean).length;
     if (cfg.verbose && words > cfg.maxWords) {
       console.error(`\n  note: answer ran ${words} words against a ${cfg.maxWords} cap (~${((words - cfg.maxWords) / 3.1).toFixed(1)}s over)`);
     }

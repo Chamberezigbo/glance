@@ -4,6 +4,7 @@ import { dirname, basename } from "node:path";
 import { findClaudeCli } from "../config.js";
 import { systemPrompt } from "../prompt.js";
 import { sessionDir } from "../capture.js";
+import { STEPS_MARKER } from "../task.js";
 import type { GlanceRequest, GlanceResult, Provider, TokenUsage } from "./types.js";
 
 const run = promisify(execFile);
@@ -44,6 +45,9 @@ export class SubscriptionProvider implements Provider {
       // the model reaching for the Read tool again, which would cost a turn.
       ? `Still about the same screenshot, which you have already seen — do not read it again.\n\n` +
         `Answer in under ${req.maxWords} words, as plain spoken prose with no lists.\n\n` +
+        // Follow-ups are clarifying questions about work already in progress,
+        // so they must not start a competing checklist.
+        `Do not add a ${STEPS_MARKER} list; this is a follow-up, not a new task.\n\n` +
         `The user asks: ${req.question}`
       : `${systemPrompt(req.maxWords)}\n\n` +
         `Read the image file ${basename(req.imagePath!)} in the current directory. That image is the user's screen.\n\n` +

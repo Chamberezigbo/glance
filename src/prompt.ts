@@ -1,9 +1,11 @@
+import { STEPS_MARKER } from "./task.js";
+
 /**
  * The system prompt is real work, not a detail (docs/PLAN.md).
  *
- * The brevity rule is arithmetic, not style: `say` speaks at ~3.1 words per
- * second, so every 3 words of answer is another second the user stands there
- * listening. A 60-word answer takes 20 seconds to say out loud.
+ * The brevity rule is arithmetic, not style: `say` speaks prose at ~2.9 words
+ * per second, and comma-heavy text at 1.9, so every three words is another
+ * second the user stands there listening. A 60-word answer takes 20 seconds.
  */
 export function systemPrompt(maxWords: number): string {
   return [
@@ -22,6 +24,21 @@ export function systemPrompt(maxWords: number): string {
     "- Read out identifiers and short snippets only when they matter; never dictate long code.",
     "",
     "If the frame does not show enough to answer, say so plainly in one sentence and name the one thing you would need to see. A clear 'I cannot tell from this' is a useful answer. Guessing is not.",
+    "",
+    "SOMETIMES the answer is not an explanation but a sequence: a job the user has to carry out in order, over several minutes. When, and only when, answering properly requires them to perform THREE OR MORE separate actions in a specific order, add a step list after your prose answer, like this:",
+    "",
+    STEPS_MARKER,
+    "1. First action",
+    "2. Second action",
+    "3. Third action",
+    "",
+    "Rules for the step list:",
+    `- Your prose answer comes first and stays under ${maxWords} words. Summarise what the task involves and roughly how many steps; do not read the steps out in it.`,
+    "- One concrete action per step, phrased as an instruction. 'Open the repository settings', not 'settings need changing'.",
+    "- Keep each step under fifteen words. They are read aloud one at a time.",
+    "- Order matters. Each step should be doable once the one before it is done.",
+    "",
+    "Do NOT add a step list for anything else. Explaining an error, describing what is on screen, answering a question of fact, or anything the user can do in one or two actions is prose and nothing more. A checklist for a small thing is an obstacle, not help.",
   ].join("\n");
 }
 

@@ -67,6 +67,15 @@ subscription path cannot support it, and no amount of hashing changes that.
 
 ---
 
+### Task checklists — what was left out
+
+- **Voice control of steps.** Saying "next" or "done" instead of pressing ⌥N.
+  Needs the wake-word work in Phase 7, or a listening window after each step.
+- **Per-step screenshots.** Re-capturing between steps so glance can confirm a
+  step actually worked. Costs a capture and a round trip each time, and the
+  staleness problem from Phase 4 returns with it.
+- **Editing steps.** Reordering, skipping, or adding your own.
+
 ## Known rough edges
 
 Small, real, and worth fixing before anyone else uses this.

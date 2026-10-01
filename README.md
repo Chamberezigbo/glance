@@ -58,6 +58,8 @@ reasoning and what was deliberately *not* built are in
 | **⌥Space** | ask out loud, hear the answer |
 | **⌥⇧Space** | type a question, read the answer |
 | `glance "why is this failing?"` | from a terminal |
+| **⌥N** | tick the current step, move to the next |
+| **⌥R** | repeat the last answer |
 | `glance --follow "and the one below?"` | follow up without a new screenshot |
 
 Answers match how you asked: **typed gets a panel, spoken gets both.** Someone
@@ -69,6 +71,30 @@ Follow-ups reuse the screenshot already in the conversation: **30,896 tokens and
 12.3s, against 59,584 and 18.5s** for a fresh question. The conversation expires
 after five minutes, because an answer about a screen you've navigated away from
 isn't slightly stale — it's confident and wrong.
+
+## Big tasks become a checklist
+
+Some answers are instructions, not explanations. Ask *"how do I take this repo
+from private to fully open source?"* and glance breaks it into steps, shows the
+one you are on, and advances with **⌥N** until the task is done.
+
+```
+Step 2 of 5
+Scroll to Danger Zone and change visibility from Private to Public
+click for all · ⌥N next step
+```
+
+Click the panel for the whole checklist. Only genuinely sequential answers — three
+or more actions in order — become tasks; *"what is this error?"* stays prose.
+
+It costs **no extra tokens**: the steps arrive in the same response as the
+answer, so a task-producing question measures the same ~59,000 as any other.
+
+Speech never reads the list out. At 2.9 words/second a six-step checklist is
+over a minute of audio, so you hear the summary and the step you are on.
+
+A follow-up keeps your task; a new question replaces it, and says so —
+`glance task restore` undoes that.
 
 ## Two models, one interface
 

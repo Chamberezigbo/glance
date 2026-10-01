@@ -455,6 +455,42 @@ watch your screen is exactly what a cautious person should refuse.
 
 Rebuild with `npm run setup:icon`; `build-app.sh` installs it automatically.
 
+## Task checklists — built
+
+Some answers are a job to carry out, not a thing to understand. As prose they
+are spoken once and gone, leaving the user to hold six ordered actions in their
+head while doing them.
+
+**Zero extra tokens.** The steps come back in the same response as the answer,
+via an output contract: prose first, then a `###STEPS###` marker and the list.
+Decomposing in a second call would have cost another ~59,000 tokens on the
+subscription path. Measured: a task-producing question cost 60,718, in line with
+every other question.
+
+### Why a marker rather than JSON
+
+The prompt already works hard to get plain spoken prose with no lists. Asking
+for a JSON envelope fights that instruction and invites markdown fences. A
+trailing marker leaves the prose untouched and **degrades safely** — a malformed
+or missing marker just means a normal prose answer, never a lost one.
+
+### Decisions
+
+- **Conservative, enforced in code.** Three or more sequential actions, with the
+  floor in `parseSteps()` rather than trusted to the prompt, because models
+  drift toward being helpful and a checklist for a small thing is an obstacle.
+- **A follow-up keeps the task; a new question replaces it.** Follow-ups are
+  clarifying questions about work already under way, so the resuming prompt
+  explicitly suppresses step lists.
+- **Replacement archives rather than deletes.** The chosen behaviour loses
+  progress, and this project has already been bitten once by a loss that looked
+  like silence. `glance task restore` brings it back.
+- **Speech never reads the list.** At 2.9 words/second six steps is over a
+  minute of audio. The prose summary plus the current step only.
+- **Collapsed by default, expandable on click.** A six-line checklist parked by
+  the cursor covers the thing being worked on, and only one line is actionable
+  at a time.
+
 ## Phase 7 (proposed) — "Hey glance" wake word
 
 Wake it by voice instead of reaching for a hotkey. Costs **zero tokens**:

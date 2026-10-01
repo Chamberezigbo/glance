@@ -14,7 +14,7 @@ import Carbon.HIToolbox
 import AVFoundation
 
 enum State: String {
-    case idle, listening, thinking, speaking, followable
+    case idle, listening, thinking, speaking, followable, task
 
     var symbol: String {
         switch self {
@@ -25,6 +25,9 @@ enum State: String {
         // Filled, so a follow-up window is visible at a glance without being
         // a different shape to learn.
         case .followable: return "eye.fill"
+        // A task in progress outlasts any one answer, so the menu bar has to
+        // show it: otherwise the only reminder lives in a panel that times out.
+        case .task:       return "checklist"
         }
     }
     var label: String {
@@ -34,6 +37,7 @@ enum State: String {
         case .thinking:   return "glance — thinking"
         case .speaking:   return "glance — speaking"
         case .followable: return "glance — press ⌥Space again to follow up on the same screen"
+        case .task:       return "glance — task in progress, ⌥N for the next step"
         }
     }
 }
@@ -205,6 +209,11 @@ final class AnswerPanel {
     private var dismissTimer: Timer?
     private var pinned = false
     private var hovering = false
+    /// Non-nil while showing a task: the full checklist, for expanding into.
+    private var checklist: [(text: String, done: Bool, current: Bool)] = []
+    private var expanded = false
+    private var taskHeader = ""
+    private var anchorPoint = NSPoint.zero
 
     private func armDismiss(after seconds: Double) {
         dismissTimer?.invalidate()
@@ -214,7 +223,30 @@ final class AnswerPanel {
         }
     }
 
-    func show(_ text: String, near point: NSPoint, isError: Bool = false) {
+    /// Show the step the user is on, with the rest one click away.
+    ///
+    /// Collapsed by default: a six-line checklist parked beside the cursor
+    /// covers the thing being worked on, and only one line of it is actionable
+    /// at a time. The count carries the sense of progress that the list would.
+    func showTask(header: String, step: String, steps: [(String, Bool, Bool)], near point: NSPoint) {
+        checklist = steps.map { (text: $0.0, done: $0.1, current: $0.2) }
+        taskHeader = header
+        expanded = false
+        show(renderTask(step: step), near: point, isError: false, isTask: true)
+    }
+
+    private func renderTask(step: String) -> String {
+        if !expanded { return "\(taskHeader)\n\(step)" }
+        let lines = checklist.map { item -> String in
+            let mark = item.done ? "✓" : (item.current ? "●" : "○")
+            return "\(mark)  \(item.text)"
+        }
+        return "\(taskHeader)\n" + lines.joined(separator: "\n")
+    }
+
+    func show(_ text: String, near point: NSPoint, isError: Bool = false, isTask: Bool = false) {
+        if !isTask { checklist = []; expanded = false }
+        if panel == nil { anchorPoint = point }
         hide()
 
         let font = NSFont.systemFont(ofSize: 14)
@@ -271,13 +303,26 @@ final class AnswerPanel {
         // so a pinned panel does not look like one that forgot to close.
         blur.onClick = { [weak self] in
             guard let self else { return }
+            if !self.checklist.isEmpty {
+                // A task expands to the whole checklist, and stays open while
+                // expanded — you opened it to read it.
+                self.expanded.toggle()
+                self.pinned = self.expanded
+                blur.layer?.borderWidth = self.expanded ? 1.5 : 0
+                blur.layer?.borderColor = NSColor.controlAccentColor.cgColor
+                let current = self.checklist.first(where: { $0.current })?.text ?? ""
+                self.show(self.renderTask(step: current), near: self.anchorPoint, isError: false, isTask: true)
+                if !self.expanded { self.armDismiss(after: 4.0) }
+                return
+            }
             self.pinned.toggle()
             blur.layer?.borderWidth = self.pinned ? 1.5 : 0
             blur.layer?.borderColor = NSColor.controlAccentColor.cgColor
             if self.pinned { self.dismissTimer?.invalidate() } else { self.armDismiss(after: 3.0) }
         }
 
-        let hint = NSTextField(labelWithString: "click to keep · ⌥R to repeat")
+        let hint = NSTextField(labelWithString:
+            checklist.isEmpty ? "click to keep · ⌥R to repeat" : "click for all · ⌥N next step")
         hint.font = NSFont.systemFont(ofSize: 10)
         hint.textColor = .tertiaryLabelColor
         hint.sizeToFit()
@@ -314,6 +359,7 @@ final class App: NSObject, NSApplicationDelegate {
     private var hotKeyRef: EventHotKeyRef?
     private var typeHotKeyRef: EventHotKeyRef?
     private var repeatHotKeyRef: EventHotKeyRef?
+    private var nextHotKeyRef: EventHotKeyRef?
     private var running = false
     private let repoRoot: String
 
@@ -345,12 +391,18 @@ final class App: NSObject, NSApplicationDelegate {
         setState(.idle)
 
         let menu = NSMenu()
+        menu.autoenablesItems = false
         menu.addItem(NSMenuItem(title: "Ask out loud", action: #selector(trigger), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Type a question…", action: #selector(askTyped), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "Repeat last answer", action: #selector(repeatLast), keyEquivalent: ""))
+        nextItem = NSMenuItem(title: "Next step", action: #selector(nextStep), keyEquivalent: "")
+        clearTaskItem = NSMenuItem(title: "Clear task", action: #selector(clearTask), keyEquivalent: "")
+        menu.addItem(nextItem!)
+        menu.addItem(clearTaskItem!)
         menu.addItem(NSMenuItem(title: "New conversation", action: #selector(newConversation), keyEquivalent: ""))
         menu.addItem(.separator())
-        for text in ["⌥Space — ask out loud", "⌥⇧Space — type a question", "⌥R — repeat last answer"] {
+        for text in ["⌥Space — ask out loud", "⌥⇧Space — type a question",
+                     "⌥R — repeat last answer", "⌥N — next step"] {
             let hint = NSMenuItem(title: text, action: nil, keyEquivalent: "")
             hint.isEnabled = false
             menu.addItem(hint)
@@ -359,6 +411,7 @@ final class App: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem(title: "Quit glance", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         menu.items.forEach { $0.target = self }
         statusItem.menu = menu
+        updateTaskMenu()
 
         log("repo root: \(repoRoot)")
         watchForUnlock()
@@ -435,6 +488,10 @@ final class App: NSObject, NSApplicationDelegate {
     private var stateTimer: Timer?
     private let answerPanel = AnswerPanel()
     private let badge = StatusBadge()
+    private var nextItem: NSMenuItem?
+    private var clearTaskItem: NSMenuItem?
+    private var taskActive = false
+    private var lastTaskAt: Double = 0
     private var lastPhase = ""
     private var lastAnswerAt: Double = 0
 
@@ -450,6 +507,7 @@ final class App: NSObject, NSApplicationDelegate {
         // the gap between pressing the key and seeing anything feels dead.
         answerWatch = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             self?.pollPhase()
+            self?.pollTask()
             self?.showAnswerIfNew()
         }
         // Ignore whatever is already on disk, so restarting does not replay the
@@ -481,10 +539,65 @@ final class App: NSObject, NSApplicationDelegate {
         guard phase != lastPhase else { return }
         lastPhase = phase
 
-        setState(State(rawValue: phase) ?? .idle)
         switch phase {
-        case "listening", "thinking", "speaking": badge.show(phase)
-        default: badge.hide()
+        case "listening", "thinking", "speaking":
+            setState(State(rawValue: phase) ?? .idle)
+            badge.show(phase)
+        default:
+            // A task outlives any single answer, so idle must not erase it.
+            setState(taskActive ? .task : .idle)
+            badge.hide()
+        }
+    }
+
+    /// Follow the task the CLI is tracking.
+    ///
+    /// Reads the same way as the answer and phase files — one small JSON file,
+    /// polled, with the menu reflecting whether a task exists at all. The
+    /// panel is only redrawn when the step actually changes, so a task sitting
+    /// at step three does not reappear every quarter second.
+    private func pollTask() {
+        let path = (NSHomeDirectory() as NSString).appendingPathComponent(".glance/task-display.json")
+        guard let data = FileManager.default.contents(atPath: path),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let at = obj["at"] as? Double else {
+            if taskActive {
+                taskActive = false
+                updateTaskMenu()
+                setState(.idle)
+            }
+            return
+        }
+
+        if !taskActive { taskActive = true; updateTaskMenu() }
+
+        guard at > lastTaskAt else { return }
+        lastTaskAt = at
+
+        let current = (obj["current"] as? Int) ?? 0
+        let total = (obj["total"] as? Int) ?? 0
+        let step = (obj["step"] as? String) ?? ""
+        let raw = (obj["steps"] as? [[String: Any]]) ?? []
+        let steps: [(String, Bool, Bool)] = raw.enumerated().map { i, d in
+            ((d["text"] as? String) ?? "", (d["done"] as? Bool) ?? false, i == current - 1)
+        }
+
+        setState(.task)
+        statusItem.button?.toolTip = "glance — step \(current) of \(total)"
+        DispatchQueue.main.async { [weak self] in
+            self?.badge.hide()
+            self?.answerPanel.showTask(header: "Step \(current) of \(total)",
+                                       step: step, steps: steps,
+                                       near: NSEvent.mouseLocation)
+        }
+    }
+
+    /// Task-only menu items are hidden when there is no task to act on.
+    private func updateTaskMenu() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.nextItem?.isHidden = !self.taskActive
+            self.clearTaskItem?.isHidden = !self.taskActive
         }
     }
 
@@ -584,6 +697,7 @@ final class App: NSObject, NSApplicationDelegate {
             switch hkID.id {
             case 2:  app.askTyped()
             case 3:  app.repeatLast()
+            case 4:  app.nextStep()
             default: app.trigger()
             }
             return noErr
@@ -606,8 +720,14 @@ final class App: NSObject, NSApplicationDelegate {
                                      repeatID, GetApplicationEventTarget(), 0, &repeatHotKeyRef)
         log(s2 == noErr ? "⌥⇧Space registered (typed)"
                         : "could not register ⌥⇧Space (error \(s2))")
+        // ⌥N — tick the current step and move to the next.
+        let nextID = EventHotKeyID(signature: OSType(0x474C4E43 /* GLNC */), id: 4)
+        let s4 = RegisterEventHotKey(UInt32(kVK_ANSI_N), UInt32(optionKey),
+                                     nextID, GetApplicationEventTarget(), 0, &nextHotKeyRef)
         log(s3 == noErr ? "⌥R registered (repeat last answer)"
                         : "could not register ⌥R (error \(s3))")
+        log(s4 == noErr ? "⌥N registered (next step)"
+                        : "could not register ⌥N (error \(s4))")
     }
 
     /// Ask by typing: a small panel instead of the microphone.
@@ -664,10 +784,22 @@ final class App: NSObject, NSApplicationDelegate {
     ///
     /// Allowed to run even while a glance is in flight: wanting the previous
     /// answer back is most likely precisely when you are busy acting on it.
-    @objc func repeatLast() {
+    @objc func repeatLast() { runDetached("./bin/glance-run --repeat") }
+
+    /// Tick the current step and move on.
+    @objc func nextStep() { runDetached("./bin/glance-run --next") }
+
+    /// Drop the task. Recoverable with `glance task restore`.
+    @objc func clearTask() {
+        runDetached("./bin/glance-run --task-clear")
+        taskActive = false
+        setState(.idle)
+    }
+
+    private func runDetached(_ command: String) {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/bin/bash")
-        task.arguments = ["-lc", "cd '\(repoRoot)' && ./bin/glance-run --repeat"]
+        task.arguments = ["-lc", "cd '\(repoRoot)' && \(command)"]
         try? task.run()
     }
 
