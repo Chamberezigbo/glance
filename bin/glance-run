@@ -10,12 +10,12 @@ cd "$ROOT"
 export PATH="$HOME/.nvm/versions/node/$(ls "$HOME/.nvm/versions/node" 2>/dev/null | sort -V | tail -1)/bin:/usr/local/bin:/opt/homebrew/bin:$PATH"
 
 case "${1:-}" in
-  --greet)  exec node dist/cli.js greet  >> "$ROOT/glance.log" 2>&1 ;;
-  --repeat) exec node dist/cli.js repeat >> "$ROOT/glance.log" 2>&1 ;;
-  --next)   exec node dist/cli.js next   >> "$ROOT/glance.log" 2>&1 ;;
-  --check)  exec node dist/cli.js check  >> "$ROOT/glance.log" 2>&1 ;;
-  --task-clear) exec node dist/cli.js task clear >> "$ROOT/glance.log" 2>&1 ;;
-  --task)   exec node dist/cli.js task   >> "$ROOT/glance.log" 2>&1 ;;
-  --ask)   [ -n "${2:-}" ] && exec node dist/cli.js --speak "$2" >> "$ROOT/glance.log" 2>&1 ;;
+  --greet)  exec node dist/cli.js greet  >> "$HOME/.glance/glance.log" 2>&1 ;;
+  --repeat) exec node dist/cli.js repeat >> "$HOME/.glance/glance.log" 2>&1 ;;
+  --next)   exec node dist/cli.js next   >> "$HOME/.glance/glance.log" 2>&1 ;;
+  --check)  exec node dist/cli.js check  >> "$HOME/.glance/glance.log" 2>&1 ;;
+  --task-clear) exec node dist/cli.js task clear >> "$HOME/.glance/glance.log" 2>&1 ;;
+  --task)   exec node dist/cli.js task   >> "$HOME/.glance/glance.log" 2>&1 ;;
+  --ask)   [ -n "${2:-}" ] && exec node dist/cli.js --speak "$2" >> "$HOME/.glance/glance.log" 2>&1 ;;
 esac
-exec node dist/cli.js --listen >> "$ROOT/glance.log" 2>&1
+exec node dist/cli.js --listen >> "$HOME/.glance/glance.log" 2>&1

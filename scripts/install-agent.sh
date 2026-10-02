@@ -8,8 +8,9 @@ PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 [ -x "$ROOT/bin/glance.app/Contents/MacOS/glance" ] || { echo "bin/glance-hotkey is not built. Run: npm run setup:hotkey"; exit 1; }
 [ -f "$ROOT/dist/cli.js" ]       || { echo "dist/ is not built. Run: npm run build"; exit 1; }
 
-mkdir -p "$HOME/Library/LaunchAgents"
-sed "s|__ROOT__|$ROOT|g" "$ROOT/scripts/com.glance.agent.plist.template" > "$PLIST"
+mkdir -p "$HOME/Library/LaunchAgents" "$HOME/.glance"
+sed -e "s|__ROOT__|$ROOT|g" -e "s|__LOGS__|$HOME/.glance|g" \
+  "$ROOT/scripts/com.glance.agent.plist.template" > "$PLIST"
 
 # bootout is idempotent-ish; ignore "not loaded" on a first install.
 launchctl bootout "gui/$UID/$LABEL" 2>/dev/null || true

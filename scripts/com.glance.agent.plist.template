@@ -24,10 +24,16 @@
   <key>LimitLoadToSessionType</key>
   <string>Aqua</string>
 
+  <!-- Logs live in ~/.glance, never in the repo.
+       macOS protects ~/Documents, ~/Desktop and ~/Downloads under TCC, and
+       launchd has no permission to write there. If the repo is cloned into one
+       of them, launchd cannot open the log file and the job fails to spawn
+       entirely — exit 78, EX_CONFIG, with an empty log for the same reason it
+       failed. The app itself is fine; it never gets started. -->
   <key>StandardOutPath</key>
-  <string>__ROOT__/glance-agent.log</string>
+  <string>__LOGS__/agent.log</string>
   <key>StandardErrorPath</key>
-  <string>__ROOT__/glance-agent.log</string>
+  <string>__LOGS__/agent.log</string>
 
   <key>ProcessType</key>
   <string>Interactive</string>

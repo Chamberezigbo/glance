@@ -124,6 +124,20 @@ export async function doctor(): Promise<number> {
     checks.push({ name, status: built ? "ok" : "warn", detail: built ? "built" : hint });
   }
 
+  // A repo inside a TCC-protected folder stops launchd spawning the agent at
+  // all — it cannot open its log file, fails with EX_CONFIG, and leaves an
+  // empty log that explains nothing.
+  const protectedDirs = ["Documents", "Desktop", "Downloads"];
+  const home = process.env.HOME ?? "";
+  const inProtected = protectedDirs.find((d) => repoRoot.startsWith(join(home, d)));
+  checks.push({
+    name: "Repo location",
+    status: inProtected ? "warn" : "ok",
+    detail: inProtected
+      ? `inside ~/${inProtected}, which macOS protects — logs are kept in ~/.glance so launchd can start`
+      : repoRoot,
+  });
+
   const agent = join(process.env.HOME ?? "", "Library/LaunchAgents/com.glance.agent.plist");
   checks.push({
     name: "Login agent",
