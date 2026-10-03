@@ -49,7 +49,30 @@ export class ApiProvider implements Provider {
     if (prior.length > 0) {
       turn = { role: "user", content: userPrompt(req.question) };
     } else {
-      if (!req.imagePath) throw new Error("A first question needs a screenshot.");
+      if (!req.imagePath) {
+        // Text-only is legitimate: `glance apply` with a pasted job posting has
+        // nothing to look at.
+        turn = { role: "user", content: userPrompt(req.question) };
+        const messages0 = [turn];
+        const t1 = performance.now();
+        const r0 = await this.client.messages.create({
+          model: this.model, max_tokens: 4096,
+          system: systemPrompt(req.maxWords), messages: messages0,
+        });
+        const answer0 = r0.content.filter((b): b is Anthropic.TextBlock => b.type === "text")
+          .map((b) => b.text).join(" ").trim();
+        const u0: TokenUsage = {
+          input: r0.usage.input_tokens, output: r0.usage.output_tokens,
+          cacheRead: r0.usage.cache_read_input_tokens ?? 0,
+          cacheCreation: r0.usage.cache_creation_input_tokens ?? 0, total: 0,
+        };
+        u0.total = u0.input + u0.output + u0.cacheRead + u0.cacheCreation;
+        return {
+          answer: answer0, provider: this.name, model: this.model,
+          ms: performance.now() - t1, usage: u0,
+          session: { kind: "messages", messages: [...messages0, { role: "assistant", content: answer0 }] },
+        };
+      }
       const image = await readFile(req.imagePath);
       turn = {
         role: "user",

@@ -121,6 +121,33 @@ A follow-up keeps your task; a new question replaces it, and says so —
 
 Tune with `GLANCE_TIMEOUT_MS` and `GLANCE_SLOW_MS`.
 
+## Applying for a job
+
+```
+glance apply                      # reads the posting from your screen
+glance apply "paste the posting"  # or from text you paste
+```
+
+It finds your CV, rewrites it for that specific role, renders it as a PDF, and
+opens a **Mail draft** with it attached and the application written.
+
+**It never sends.** Everything before the send is tedious and worth automating;
+the send is the one step where being wrong cannot be taken back, and a misread
+role or a badly tailored CV damages exactly the thing this is meant to help.
+
+Two things it will not do:
+
+- **Invent anything.** It reorders and rewords what is already in your CV and is
+  told not to add employers, dates, titles or skills. Verified on a real run:
+  633 words tightened to 359, with no fabricated claims.
+- **Pick the wrong CV.** A search for "cv" finds other people's too — one
+  someone emailed you sits in Downloads looking just like yours. It prefers a
+  filename carrying your name, from `name` in your config, and
+  `{"cv": "/path/to/yours.pdf"}` settles it outright.
+
+Reading PDFs uses a small PDFKit helper rather than a dependency, because
+`pdftotext`, `pdfplumber` and `PyPDF2` are all absent on a stock Mac.
+
 ## Two models, one interface
 
 | | Subscription (`claude -p`) | API key |

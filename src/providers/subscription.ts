@@ -48,6 +48,13 @@ export class SubscriptionProvider implements Provider {
       ? `Same conversation, but here is a FRESH screenshot of the user's screen taken just now.\n\n` +
         `Read the image file ${basename(req.imagePath)} in the current directory. It replaces the earlier one.\n\n` +
         `The user asks: ${req.question}`
+      // A fresh question with no image: `glance apply` with a pasted posting
+      // needs no screenshot. Without this branch basename(undefined) throws,
+      // because every fresh request was assumed to carry one.
+      : !resuming && !req.imagePath
+      ? `${systemPrompt(req.maxWords)}\n\n` +
+        `There is no screenshot for this question — answer from the text alone.\n\n` +
+        `The user asks: ${req.question}`
       : resuming
       // The image is already in this conversation. Saying so explicitly stops
       // the model reaching for the Read tool again, which would cost a turn.

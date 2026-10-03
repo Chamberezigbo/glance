@@ -11,6 +11,7 @@ import { greet, greetingText } from "./greet.js";
 import * as session from "./session.js";
 import * as task from "./task.js";
 import * as actions from "./actions.js";
+import * as apply from "./apply.js";
 import { isOnline, classify, SLOW_AFTER_MS } from "./net.js";
 import { answerMode, publishAnswer, publishError, humanError } from "./answer.js";
 
@@ -25,6 +26,10 @@ glance — ask a question about what is on your screen
                                               cutting you off mid-sentence
   glance voices                               hear each installed voice say the
                                               same line, and pick one
+  glance apply ["job posting text"]           tailor your CV to a job on screen
+                                              (or pasted), render it as a PDF,
+                                              and open a Mail draft with it
+                                              attached. Never sends.
   glance repeat                               show and speak the last answer
                                               again (⌥R, or the menu bar)
   glance next                                 tick the current step, move to the
@@ -318,6 +323,104 @@ async function main(): Promise<number> {
     console.log(await greetingText());
     return 0;
   }
+  if (argv[0] === "apply") {
+    // Tailor the CV to a job and leave the application as a draft.
+    //
+    // Stops at the draft deliberately. Everything before it is tedious and worth
+    // automating; the send is the one step where being wrong cannot be taken
+    // back, and a misread role or a badly tailored CV damages exactly the thing
+    // this is meant to help.
+    const cfgA = resolveConfig({});
+    const dirA = sessionDir();
+    const pasted = argv.slice(1).filter((a) => !a.startsWith("--")).join(" ");
+
+    const cvPath = await apply.findCV();
+    if (!cvPath) {
+      console.error('glance: no CV found. Add {"cv": "/path/to/your-cv.pdf"} to ~/.glance/config.json');
+      return 1;
+    }
+    console.error(`  CV:  ${cvPath}`);
+
+    let cvText: string;
+    try {
+      cvText = await apply.readCV(cvPath);
+    } catch (err) {
+      console.error(`glance: ${humanError(err, null).shown}`);
+      return 1;
+    }
+
+    setState("thinking");
+    try {
+      const provider = createProvider(cfgA);
+      // The job description comes from the screen unless it was pasted, so a
+      // posting in a chat or a browser works without copying it out first.
+      const shot = pasted ? null : await capture({ display: cfgA.display, width: cfgA.width, dir: dirA });
+      if (!pasted) console.error("  job: reading it from your screen");
+
+      const res = await provider.ask({
+        question:
+          `The user is applying for a job. ${pasted ? `The posting:\n\n${pasted}` : "The job posting is on the screenshot."}\n\n` +
+          `Their current CV:\n\n${cvText}\n\n` +
+          `Do three things, separated by the exact markers below.\n\n` +
+          `===ROLE===\n` +
+          `One line: the job title, the company, and the email address to apply to if one is given (write "none" if not).\n\n` +
+          `===CV===\n` +
+          `The CV, rewritten for THIS role, in markdown with # for the name, ## for section headings and - for bullets. ` +
+          `Reorder and reword so the most relevant experience comes first, and mirror the posting's own vocabulary where it is honest to do so. ` +
+          `Do NOT invent employers, dates, titles or skills — every claim must already be in the CV above. ` +
+          `Keep it to one page of content.\n\n` +
+          `===EMAIL===\n` +
+          `A short application email. First line the subject, then a blank line, then the body. ` +
+          `Under 150 words, specific about why this person fits this role, no flattery, no "I am writing to apply".`,
+        imagePath: shot?.path,
+        maxWords: 2000,
+      });
+
+      const section = (name: string): string => {
+        const m = res.answer.split(`===${name}===`)[1];
+        return m ? m.split(/===[A-Z]+===/)[0]!.trim() : "";
+      };
+      const role = section("ROLE");
+      const cvMd = section("CV");
+      const email = section("EMAIL");
+      if (!cvMd || !email) {
+        console.error("glance: could not read the posting well enough to tailor anything.");
+        console.log(res.answer);
+        return 1;
+      }
+
+      const toMatch = role.match(/[\w.+-]+@[\w-]+\.[\w.]+/);
+      const company = (role.match(/at\s+([\w &.-]+)/i)?.[1] ?? "role").trim();
+      const subjectLine = email.split("\n")[0]!.replace(/^subject:\s*/i, "").trim();
+      const bodyText = email.split("\n").slice(1).join("\n").trim();
+
+      const pdfPath = apply.outputPath(company);
+      await apply.renderPDF(apply.cvHTML(cvMd, "CV"), pdfPath);
+
+      console.log(`\n  ${role}\n`);
+      console.log(`  tailored CV: ${pdfPath}`);
+      console.log(`  subject:     ${subjectLine}`);
+      console.log(`\n${bodyText}\n`);
+
+      if (!argv.includes("--no-draft")) {
+        await apply.draftEmail({
+          to: toMatch?.[0] ?? "",
+          subject: subjectLine,
+          body: bodyText,
+          attachment: pdfPath,
+        });
+        console.error("  Mail is open with the draft and the CV attached. Read it, then send it yourself.");
+      }
+      return 0;
+    } catch (err) {
+      const { shown } = humanError(err, null);
+      console.error(`glance: ${shown}`);
+      return 1;
+    } finally {
+      setState("idle");
+    }
+  }
+
   if (argv[0] === "voices") {
     // Choosing a voice by name is guesswork; choosing by ear takes a minute.
     // macOS ships roughly ten more Premium voices as free downloads, and there
