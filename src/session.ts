@@ -74,3 +74,21 @@ export function isUsable(s: Session | null, cfg: { provider: ProviderName; model
 export function inFollowWindow(s: Session | null): boolean {
   return Boolean(s) && Date.now() - s!.lastAnswerAt < FOLLOW_WINDOW_MS;
 }
+
+/**
+ * Does the question itself ask for a fresh look?
+ *
+ * The follow-up window is right for "what about the button on the left?" and
+ * wrong for "look at it now" — and the second is indistinguishable from the
+ * first by timing alone. Someone who opens a folder and asks what is in it gets
+ * told, from the previous screenshot, that nothing has changed. That happened
+ * twice in a row in real use before it was noticed.
+ *
+ * So the words win over the clock: anything implying the screen has moved on
+ * forces a capture, whatever the timer says.
+ */
+const FRESH_LOOK = /\b(now|again|updated|current(ly)?|just (opened|did|changed)|new|this (screen|window|page|folder)|look (at|again)|refresh|re-?check)\b/i;
+
+export function wantsFreshLook(question: string): boolean {
+  return FRESH_LOOK.test(question);
+}

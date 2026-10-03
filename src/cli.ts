@@ -371,7 +371,12 @@ async function main(): Promise<number> {
   // recently the last answer finished.
   const prior = session.load();
   const canResume = !fresh && session.isUsable(prior, cfg);
-  const resuming = canResume && (follow || (doListen && session.inFollowWindow(prior)));
+  // The words beat the clock. "Look at it now" must capture, even inside the
+  // follow-up window — otherwise glance confidently reports on a screen the
+  // user has already navigated away from.
+  const asksFresh = session.wantsFreshLook(typed);
+  const resuming =
+    canResume && !asksFresh && (follow || (doListen && session.inFollowWindow(prior)));
 
   if (follow && !canResume && !fresh) {
     console.error(

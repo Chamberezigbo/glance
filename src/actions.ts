@@ -27,7 +27,8 @@ export type Action =
   | { verb: "open_settings"; pane: string }
   | { verb: "open_url"; url: string }
   | { verb: "send_message"; app: "Messages" | "WhatsApp"; to: string; text: string }
-  | { verb: "diagnose"; app: string };
+  | { verb: "diagnose"; app: string }
+  | { verb: "copy"; text: string; what: string };
 
 /** Schemes that may be opened. Anything else — file:, ssh:, custom — is refused. */
 const URL_SCHEMES = new Set(["https:", "http:", "mailto:", "sms:", "whatsapp:"]);
@@ -138,6 +139,11 @@ export function parseAction(answer: string): { prose: string; action: Action | n
       }
       return { prose, action: { verb: "open_url", url: u } };
     }
+    case "copy": {
+      const text = str(raw.text);
+      if (!text) return fail;
+      return { prose, action: { verb: "copy", text, what: str(raw.what) || "the draft" } };
+    }
     case "send_message": {
       const app = str(raw.app);
       const to = str(raw.to);
@@ -197,6 +203,7 @@ export function describeAction(a: Action): string {
     case "open_url": return `Open ${a.url}`;
     case "send_message": return `Send to ${a.to} via ${a.app}:\n\n“${a.text}”`;
     case "diagnose": return `Look at why ${a.app} is misbehaving (reads logs only)`;
+    case "copy": return `Copy ${a.what} to the clipboard:\n\n“${a.text}”`;
   }
 }
 
@@ -223,6 +230,21 @@ export async function runAction(a: Action): Promise<string> {
 
     case "diagnose":
       return diagnose(a.app);
+
+    case "copy": {
+      // The way to put text into an app that is already open, without typing.
+      //
+      // whatsapp:// opens a NEW conversation and needs a phone number, so it
+      // cannot reach the chat already in front of you — which is exactly the
+      // case that matters. Typing into it would need Accessibility. The
+      // clipboard needs nothing, and works in every app rather than the
+      // handful with an AppleScript dictionary.
+      const proc = (await import("node:child_process")).spawn("pbcopy");
+      proc.stdin.write(a.text);
+      proc.stdin.end();
+      await new Promise((r) => proc.on("close", r));
+      return `Copied. Press Command V where you want it.`;
+    }
   }
 }
 

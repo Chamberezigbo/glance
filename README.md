@@ -150,7 +150,13 @@ why those tools need Input Monitoring.
 
 Turn **Perform tasks** on in the menu bar and glance can act on what you ask:
 open an app, a folder or a settings pane, open a link, prefill or send a
-message, or read an app's logs to work out why it is misbehaving.
+message, read an app's logs to work out why it is misbehaving, or **draft
+something and put it on your clipboard** to paste where you are already working.
+
+That last one does more than it sounds. A `whatsapp://` link opens a *new*
+conversation and needs a phone number, so it cannot reach the chat already in
+front of you — and typing into it would need Accessibility. The clipboard needs
+nothing and works in every app, not the handful with an AppleScript dictionary.
 
 Three things bound it:
 

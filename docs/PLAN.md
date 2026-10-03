@@ -557,6 +557,30 @@ source of speech directives.
 2.9 → **2.5 words/sec**, lists 1.9 → **1.4**. The finding holds and got starker
 — a list now takes ~75% longer per word than prose.
 
+### Two things real use found immediately
+
+**Drafting had nowhere to go.** Asked to write a WhatsApp application and send
+it, glance read the chat, found the job, matched it to the user's role and wrote
+a good message — then stopped, because `send_message` opens a *new* conversation
+via `whatsapp://` and needs a phone number. It could not reach the chat already
+on screen, and typing into it would need Accessibility.
+
+The answer was the clipboard. `copy` puts the draft where ⌘V will reach,
+needs no permission, and works in every app rather than the few with an
+AppleScript dictionary. Drafting is most of what this feature is for, and the
+clipboard is how drafts get where they are going.
+
+**The follow-up window lied about the screen.** Asked "can you see the updated
+view?" after opening a folder, glance answered from the *previous* screenshot —
+twice — because ⌥Space inside 45 seconds reuses it. That is right for "what
+about the button on the left?" and wrong for "look at it now", and the two are
+indistinguishable by timing.
+
+So the words now beat the clock: a question implying the screen has moved on
+forces a capture whatever the timer says. The failure it trades into — an
+occasional unnecessary capture — is far cheaper than confidently describing a
+screen the user has already left.
+
 ## Network failures
 
 glance makes one slow call over the network and then waits. Three things were
