@@ -409,6 +409,9 @@ final class App: NSObject, NSApplicationDelegate {
         menu.addItem(clearTaskItem!)
         menu.addItem(NSMenuItem(title: "New conversation", action: #selector(newConversation), keyEquivalent: ""))
         menu.addItem(.separator())
+        actionsItem = NSMenuItem(title: "Perform tasks", action: #selector(toggleActions), keyEquivalent: "")
+        menu.addItem(actionsItem!)
+        menu.addItem(.separator())
         for text in ["⌥Space — ask out loud", "⌥⇧Space — type a question",
                      "⌥R — repeat this step", "⌥N — next step",
                      "⌥⇧N — check this step"] {
@@ -421,6 +424,7 @@ final class App: NSObject, NSApplicationDelegate {
         menu.items.forEach { $0.target = self }
         statusItem.menu = menu
         updateTaskMenu()
+        refreshActionsItem()
         installEditMenu()
 
         log("repo root: \(repoRoot)")
@@ -503,6 +507,8 @@ final class App: NSObject, NSApplicationDelegate {
     private var checkItem: NSMenuItem?
     private var taskActive = false
     private var lastTaskAt: Double = 0
+    private var lastConfirmId = ""
+    private var actionsItem: NSMenuItem?
     private var lastPhase = ""
     private var lastAnswerAt: Double = 0
 
@@ -519,6 +525,7 @@ final class App: NSObject, NSApplicationDelegate {
         answerWatch = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             self?.pollPhase()
             self?.pollTask()
+            self?.pollConfirm()
             self?.showAnswerIfNew()
         }
         // Ignore whatever is already on disk, so restarting does not replay the
@@ -558,6 +565,44 @@ final class App: NSObject, NSApplicationDelegate {
             // A task outlives any single answer, so idle must not erase it.
             setState(taskActive ? .task : .idle)
             badge.hide()
+        }
+    }
+
+    /// Confirm an action before it runs.
+    ///
+    /// Every action is confirmed, including opening an app. The screen is an
+    /// input glance cannot vet: a web page or an image showing instruction-like
+    /// text could get an action proposed. A human seeing the exact action is the
+    /// main defence, which is why there is no "don't ask again".
+    ///
+    /// Cancel is the default button, so Return does the safe thing.
+    private func pollConfirm() {
+        let path = (NSHomeDirectory() as NSString).appendingPathComponent(".glance/confirm.json")
+        guard let data = FileManager.default.contents(atPath: path),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let id = obj["id"] as? String,
+              let description = obj["description"] as? String,
+              id != lastConfirmId else { return }
+        lastConfirmId = id
+
+        DispatchQueue.main.async { [weak self] in
+            NSApp.activate(ignoringOtherApps: true)
+            let a = NSAlert()
+            a.messageText = "glance wants to do this"
+            a.informativeText = description
+            a.alertStyle = .warning
+            a.addButton(withTitle: "Cancel")   // first button is the default
+            a.addButton(withTitle: "Do it")
+            let approved = a.runModal() == .alertSecondButtonReturn
+            self?.answerConfirm(id: id, approved: approved)
+        }
+    }
+
+    private func answerConfirm(id: String, approved: Bool) {
+        let out = (NSHomeDirectory() as NSString).appendingPathComponent(".glance/confirm-result.json")
+        let payload = ["id": id, "approved": approved] as [String: Any]
+        if let d = try? JSONSerialization.data(withJSONObject: payload) {
+            try? d.write(to: URL(fileURLWithPath: out))
         }
     }
 
@@ -856,6 +901,31 @@ final class App: NSObject, NSApplicationDelegate {
         task.executableURL = URL(fileURLWithPath: "/bin/bash")
         task.arguments = ["-lc", "cd '\(repoRoot)' && \(command)"]
         try? task.run()
+    }
+
+    /// Turn the ability to act on or off, and show which it is.
+    ///
+    /// In the menu rather than only in a config file, because a capability this
+    /// significant should be visible and reversible without opening an editor.
+    @objc func toggleActions() {
+        let path = (NSHomeDirectory() as NSString).appendingPathComponent(".glance/config.json")
+        var cfg = (try? JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: path)))) as? [String: Any] ?? [:]
+        let now = !((cfg["actions"] as? Bool) ?? false)
+        cfg["actions"] = now
+        if let d = try? JSONSerialization.data(withJSONObject: cfg, options: .prettyPrinted) {
+            try? d.write(to: URL(fileURLWithPath: path))
+        }
+        refreshActionsItem()
+    }
+
+    private func refreshActionsItem() {
+        let path = (NSHomeDirectory() as NSString).appendingPathComponent(".glance/config.json")
+        let cfg = (try? JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: path)))) as? [String: Any] ?? [:]
+        let on = (cfg["actions"] as? Bool) ?? false
+        DispatchQueue.main.async { [weak self] in
+            self?.actionsItem?.state = on ? .on : .off
+            self?.actionsItem?.title = on ? "Perform tasks (on)" : "Perform tasks (off)"
+        }
     }
 
     @objc func newConversation() {

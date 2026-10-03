@@ -19,6 +19,42 @@ Input Monitoring.
 So glance has no mechanism to read what you type or to control your machine,
 regardless of what its code does.
 
+## Performing tasks
+
+Off by default. When enabled, glance can open apps, folders, settings panes and
+links, send or prefill a message, and read an app's logs to diagnose it.
+
+**It does not gain Accessibility or Input Monitoring.** Sending through Messages
+uses macOS **Automation**, which is prompted per app and grants control of that
+one app — it does not grant keyboard access. The claim above, that glance has no
+mechanism to read what you type, still holds.
+
+Three bounds:
+
+1. **An allowlist, not a shell.** The model selects a verb from a fixed
+   vocabulary and supplies parameters; glance constructs the command. App names
+   are matched against installed apps, paths must exist, and URL schemes are
+   restricted to https, http, mailto, sms and whatsapp. A forged verb is
+   discarded.
+2. **Every action is confirmed** before it runs, including opening an app, with
+   Cancel as the default button. There is deliberately no way to suppress this.
+3. **Disabled unless you enable it**, in the menu bar or `~/.glance/config.json`.
+
+### The risk this introduces
+
+With tasks enabled, **the screen becomes an input that can propose actions**.
+glance reads whatever is in front of it and cannot distinguish a user's request
+from text in a web page, an email or an image that is shaped like one. A page
+displaying something that looks like an instruction could cause an action to be
+suggested.
+
+The system prompt tells the model to treat on-screen text as content rather than
+instruction, and that holds in testing. But the confirmation is the defence that
+does not depend on the model behaving, which is why every action has one.
+
+If this matters to you, leave tasks off. With them off glance is exactly as it
+was: it looks, and it advises.
+
 ## What leaves your machine
 
 Only when you ask: **one downscaled screenshot and your question**, sent to

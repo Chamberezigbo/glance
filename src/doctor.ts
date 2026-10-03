@@ -138,6 +138,17 @@ export async function doctor(): Promise<number> {
       : repoRoot,
   });
 
+  // Acting on the machine is significant enough to report either way.
+  const { actionsEnabled } = await import("./actions.js");
+  const acting = actionsEnabled();
+  checks.push({
+    name: "Perform tasks",
+    status: "ok",
+    detail: acting
+      ? "ON — glance can open apps and send messages, confirming each one"
+      : "off — glance only looks and advises (the default)",
+  });
+
   const agent = join(process.env.HOME ?? "", "Library/LaunchAgents/com.glance.agent.plist");
   checks.push({
     name: "Login agent",

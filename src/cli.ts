@@ -10,6 +10,7 @@ import { listen, setState, calibrate } from "./listen.js";
 import { greet, greetingText } from "./greet.js";
 import * as session from "./session.js";
 import * as task from "./task.js";
+import * as actions from "./actions.js";
 import { isOnline, classify, SLOW_AFTER_MS } from "./net.js";
 import { answerMode, publishAnswer, publishError, humanError } from "./answer.js";
 
@@ -443,9 +444,16 @@ async function main(): Promise<number> {
       });
     }
 
+    // An action, if the user asked for one. Parsed before steps so the marker
+    // block never reaches speech or the panel.
+    const { prose: afterAction, action } =
+      actions.actionsEnabled()
+        ? actions.parseAction(result.answer)
+        : { prose: result.answer, action: null };
+
     // Some answers are sequences, not explanations. Split them before anything
     // is spoken or shown — the marker block must never reach either.
-    const { prose, steps } = task.parseSteps(result.answer);
+    const { prose, steps } = task.parseSteps(afterAction);
 
     let started: task.Task | null = null;
     if (steps.length > 0 && !resuming) {
@@ -506,6 +514,31 @@ async function main(): Promise<number> {
         `\n  total     ${(total / 1000).toFixed(1)}s`,
       );
     }
+    // Every action is confirmed, including opening an app. The screen is an
+    // input glance cannot vet — a page showing instruction-like text could get
+    // an action proposed — so a human sees each one before it runs.
+    if (action) {
+      const what = actions.describeAction(action);
+      console.error(`\nglance wants to: ${what}`);
+      const ok = await actions.confirmAction(action);
+      if (!ok) {
+        console.error("glance: cancelled.");
+        publishAnswer(`Cancelled: ${what}`, { question, followUp: true });
+      } else {
+        try {
+          const outcome = await actions.runAction(action);
+          console.log(outcome);
+          publishAnswer(outcome, { question, followUp: true });
+          if (mode === "both" || mode === "voice") await speak(outcome).catch(() => {});
+        } catch (err) {
+          const { spoken, shown } = humanError(err, null);
+          console.error(`glance: ${shown}`);
+          publishError(shown, question);
+          if (mode === "both" || mode === "voice") await speak(spoken).catch(() => {});
+        }
+      }
+    }
+
     if (keep && shot) console.error(`\nscreenshot: ${shot.path}`);
     return 0;
   } catch (err) {

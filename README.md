@@ -137,16 +137,39 @@ tool schemas, settings — not the screenshot, which is ~790 tokens. The lean
 flags glance uses cut it from 167,148 tokens and 30s down to 59,000 and 16s, but
 ~50k is the floor.
 
-## What it deliberately cannot do
+## What it can and cannot do
 
 glance holds **only Screen Recording and Microphone**. It never asks for
-Accessibility or Input Monitoring, so it has no way to read what you type or
-control your machine.
+**Accessibility** or **Input Monitoring**, so it has no mechanism to read what
+you type — and that is structural, not a promise. The global hotkey uses
+Carbon's `RegisterEventHotKey`, which asks the window server for one chord; a
+`CGEventTap`, what most hotkey libraries use, observes every keystroke, which is
+why those tools need Input Monitoring.
 
-That isn't restraint, it's enforced by the permission set. The global hotkey
-uses Carbon's `RegisterEventHotKey`, which asks the window server for one
-specific chord — unlike a `CGEventTap`, which observes *every* keystroke and is
-why most hotkey libraries demand Input Monitoring.
+### Performing tasks — off by default
+
+Turn **Perform tasks** on in the menu bar and glance can act on what you ask:
+open an app, a folder or a settings pane, open a link, prefill or send a
+message, or read an app's logs to work out why it is misbehaving.
+
+Three things bound it:
+
+- **An allowlist, never a shell.** The model picks a verb from a fixed
+  vocabulary and supplies parameters; glance builds the command. It cannot
+  express anything else — a forged `run_shell` is simply ignored.
+- **Every action is confirmed**, including opening an app. Cancel is the default
+  button.
+- **Off unless you turn it on.** With it off, nothing changes and the model is
+  never even told the vocabulary exists.
+
+It still cannot click or type. That was measured, not assumed: the model located
+**1 of 4 UI controls accurately, with 250–330 pixel errors**, so clicking would
+click the wrong thing. See [docs/PLAN.md](docs/PLAN.md), Phase 6.
+
+**The risk worth understanding:** with tasks enabled, the screen becomes an
+input that can propose actions. A web page or image showing instruction-like
+text could get one suggested. The confirmation is what stops it reaching your
+machine, and it is why there is no "don't ask again".
 
 Nothing is stored, indexed, or sent anywhere except the question and one
 downscaled frame, to Claude, when you ask.

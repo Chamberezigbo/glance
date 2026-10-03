@@ -17,7 +17,7 @@ reason, not by drift.
 |---|---|---|
 | Platform | macOS only **for v1** | It is the machine that exists. **Revised 2026-09-30:** Windows and Linux were a flat non-goal; they are now a possible v2 (see *Beyond v1*). This does not change v1 — building cross-platform now would slow the only version that currently has a user. |
 | Trigger | Global hotkey | Always-watching burns ~1M tokens/hour. A hotkey burns zero while idle. |
-| Autonomy | Look and advise only | No clicking, no typing. Removes the entire class of "it did the wrong thing to a real window" risk. |
+| Autonomy | Look and advise; act only on request, behind a toggle | Originally "look and advise only". **Revised 2026-10-03:** glance can now open apps, folders, settings and links, send a message, and diagnose an app — from an allowlist, confirmed every time, off by default. It still cannot click or type, which is measured rather than assumed: the Phase 6 probe located 1 of 4 controls accurately with 250-330px errors, so clicking would click the wrong thing. No Accessibility, no Input Monitoring. |
 | Brain | `claude -p` headless **or** Messages API | Subscription path needs no API key and no second bill. **Measured 2026-09-30: it also costs ~59k tokens and 8s per glance**, so an `ANTHROPIC_API_KEY` path exists alongside it (~1.2k tokens, ~2-3s). Chosen by config, not compiled in. |
 | Speech out | `say` with a Premium voice | Built in, offline, free. `Ava (Premium)` and `Daniel (Enhanced)` are installed and both sound good. **Speaks at ~2.5 words/second** at the shipped 150 wpm — this caps answer length. |
 | Speech in | whisper.cpp `base.en` | Local and offline. **Proven 2026-09-30: 2.47s for a 4.5s clip under load.** `tiny.en` is 2x faster and equally accurate so far. |
