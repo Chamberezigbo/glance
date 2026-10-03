@@ -42,8 +42,8 @@ it was built**, and the measurements changed it:
 - A denied Screen Recording permission **doesn't fail** — macOS hands back your
   wallpaper with no windows in it, and the assistant then describes an empty
   desktop with total confidence. glance now refuses instead.
-- Spoken answers run at **~2.9 words/second**, and comma-separated lists drop
-  that to **1.9**. So the word cap alone doesn't bound how long an answer takes
+- Spoken answers run at **~2.5 words/second**, and comma-separated lists drop
+  that to **1.4**. So the word cap alone doesn't bound how long an answer takes
   to hear, and the prompt forbids lists outright.
 
 Every number was taken first-hand on a 2017 dual-core i5 under real load. The
@@ -103,7 +103,7 @@ and it answers from the task, not the screen.
 It costs **no extra tokens**: the steps arrive in the same response as the
 answer, so a task-producing question measures the same ~59,000 as any other.
 
-Speech never reads the list out. At 2.9 words/second a six-step checklist is
+Speech never reads the list out. At 2.5 words/second a six-step checklist is
 over a minute of audio, so you hear the summary and the step you are on.
 
 A follow-up keeps your task; a new question replaces it, and says so —

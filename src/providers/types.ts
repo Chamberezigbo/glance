@@ -21,7 +21,7 @@ export interface GlanceRequest {
    * re-sending it would defeat the point.
    */
   imagePath?: string;
-  /** Hard cap on answer length. At ~2.9 words/sec spoken, this is a time budget. */
+  /** Hard cap on answer length. At ~2.5 words/sec spoken, this is a time budget. */
   maxWords: number;
   /** Continue an existing conversation rather than starting one. */
   resume?: SessionRef;

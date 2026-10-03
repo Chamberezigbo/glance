@@ -19,7 +19,7 @@ reason, not by drift.
 | Trigger | Global hotkey | Always-watching burns ~1M tokens/hour. A hotkey burns zero while idle. |
 | Autonomy | Look and advise only | No clicking, no typing. Removes the entire class of "it did the wrong thing to a real window" risk. |
 | Brain | `claude -p` headless **or** Messages API | Subscription path needs no API key and no second bill. **Measured 2026-09-30: it also costs ~59k tokens and 8s per glance**, so an `ANTHROPIC_API_KEY` path exists alongside it (~1.2k tokens, ~2-3s). Chosen by config, not compiled in. |
-| Speech out | `say` with a Premium voice | Built in, offline, free. `Ava (Premium)` and `Daniel (Enhanced)` are installed and both sound good. **Speaks at ~3.1 words/second** — this caps answer length. |
+| Speech out | `say` with a Premium voice | Built in, offline, free. `Ava (Premium)` and `Daniel (Enhanced)` are installed and both sound good. **Speaks at ~2.5 words/second** at the shipped 150 wpm — this caps answer length. |
 | Speech in | whisper.cpp `base.en` | Local and offline. **Proven 2026-09-30: 2.47s for a 4.5s clip under load.** `tiny.en` is 2x faster and equally accurate so far. |
 | Language | TypeScript on Node 22 | Same reasoning as anvil: avoids the PyTorch-on-Intel-Mac dead end. |
 
@@ -110,7 +110,7 @@ Two things learned here:
   because on a two-monitor desk the main display is usually not the one you are
   looking at.
 - **The word cap does not bound speaking time.** Comma-separated lists speak at
-  1.9 words/sec against 2.9 for prose, so the prompt now forbids enumerations
+  1.4 words/sec against 2.5 for prose, so the prompt now forbids enumerations
   outright.
 
 ---
@@ -485,7 +485,7 @@ or missing marker just means a normal prose answer, never a lost one.
 - **Replacement archives rather than deletes.** The chosen behaviour loses
   progress, and this project has already been bitten once by a loss that looked
   like silence. `glance task restore` brings it back.
-- **Speech never reads the list.** At 2.9 words/second six steps is over a
+- **Speech never reads the list.** At 2.5 words/second six steps is over a
   minute of audio. The prose summary plus the current step only.
 - **Collapsed by default, expandable on click.** A six-line checklist parked by
   the cursor covers the thing being worked on, and only one line is actionable
@@ -515,6 +515,47 @@ Three changes, together, turn a counter into something that follows along:
 This needed one provider change — resuming a conversation *with* a new
 screenshot, which previously was not expressible: resuming meant reusing the old
 image, and a new image meant a new conversation.
+
+## Making the speech sound less mechanical
+
+The voice was fine; the delivery was not. Three changes, all local — no cloud
+TTS, so the claim that speech never leaves the machine still holds.
+
+**The first hypothesis was wrong, and that is the useful part.** Technical
+strings read slowly — 62 words/minute for a path against 148 for prose — so the
+obvious move was rewriting them to be shorter. Measured, rewriting mostly made
+them *longer*:
+
+| | As-is | Rewritten |
+|---|---|---|
+| `~/.glance/config.json` | 3.0 s | 2.3 s |
+| `checkout.js:6:22` | 2.8 s | 3.2 s |
+| `⌥⇧Space` | 1.1 s | 1.8 s |
+
+Spelling a path out character by character is *correct* for an unknown string.
+It simply does not sound like a person. Duration was the wrong target;
+naturalness costs a little time rather than saving it.
+
+What actually changed:
+
+- **150 words per minute**, down from the default ~167. Conversational rather
+  than hurried, and configurable via `speechRate`.
+- **Text written for the ear** before speaking, in `forSpeech()`. Paths become
+  "your config file", `⌥⇧` becomes "Option Shift", `checkout.js:6:22` becomes
+  "checkout dot J S, line 6". **The panel keeps the text verbatim** — it is
+  where someone copies a path from.
+- **Sentence pauses** via `[[slnc 320]]`, which Ava honours (+446 ms measured).
+  A short break is most of what separates reading a document from talking.
+
+One security note worth keeping: `say` executes `[[...]]` as embedded commands,
+so a model answer containing `[[slnc 9000]]` would pause for nine seconds, or
+silence itself with `[[volm 0]]`. `forSpeech()` neutralises those first, before
+any rule that could introduce brackets. The model's output is not a trusted
+source of speech directives.
+
+**The shipped figures moved**, and every citation had to move with them: prose
+2.9 → **2.5 words/sec**, lists 1.9 → **1.4**. The finding holds and got starker
+— a list now takes ~75% longer per word than prose.
 
 ## Network failures
 

@@ -3,9 +3,10 @@ import { STEPS_MARKER } from "./task.js";
 /**
  * The system prompt is real work, not a detail (docs/PLAN.md).
  *
- * The brevity rule is arithmetic, not style: `say` speaks prose at ~2.9 words
- * per second, and comma-heavy text at 1.9, so every three words is another
- * second the user stands there listening. A 60-word answer takes 20 seconds.
+ * The brevity rule is arithmetic, not style: at the shipped 150 wpm `say`
+ * speaks prose at ~2.5 words per second, and comma-heavy text at 1.4, so every
+ * two and a half words is another second the user stands there listening. A
+ * 60-word answer takes 24 seconds.
  */
 export function systemPrompt(maxWords: number): string {
   return [
@@ -20,7 +21,7 @@ export function systemPrompt(maxWords: number): string {
     "Write for the ear:",
     "- Lead with the answer. No preamble, no restating the question.",
     "- Plain sentences. No markdown, no bullet points, no code blocks, no headings.",
-    "- Do not read out lists of things you can see. A comma-separated list is the slowest possible way to say anything: measured, it takes about 50% longer per word than ordinary prose, because the synthesiser pauses at every comma. Summarise instead of enumerating.",
+    "- Do not read out lists of things you can see. A comma-separated list is the slowest possible way to say anything: measured, it takes about 75% longer per word than ordinary prose, because the synthesiser pauses at every comma. Summarise instead of enumerating.",
     "- Read out identifiers and short snippets only when they matter; never dictate long code.",
     "",
     "If the frame does not show enough to answer, say so plainly in one sentence and name the one thing you would need to see. A clear 'I cannot tell from this' is a useful answer. Guessing is not.",

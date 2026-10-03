@@ -5,7 +5,7 @@ import { resolveConfig, type Config } from "./config.js";
 import { capture, sessionDir } from "./capture.js";
 import { createProvider } from "./providers/index.js";
 import { doctor } from "./doctor.js";
-import { speak, bestVoice } from "./speak.js";
+import { speak, bestVoice, installedVoices, speechRate } from "./speak.js";
 import { listen, setState, calibrate } from "./listen.js";
 import { greet, greetingText } from "./greet.js";
 import * as session from "./session.js";
@@ -22,6 +22,8 @@ glance — ask a question about what is on your screen
   glance doctor                               check this machine is set up
   glance calibrate                            measure your room, so it stops
                                               cutting you off mid-sentence
+  glance voices                               hear each installed voice say the
+                                              same line, and pick one
   glance repeat                               show and speak the last answer
                                               again (⌥R, or the menu bar)
   glance next                                 tick the current step, move to the
@@ -44,6 +46,7 @@ Environment
   GLANCE_NAME="Chamberlain"   what to call you (empty string = no name)
   GLANCE_GREETING=0           turn the login greeting off
   GLANCE_ANSWER_MODE=both     both | voice | popup | none
+  GLANCE_RATE=150             speaking rate in words per minute
 
 Options
   --provider <subscription|api>  which model path to use (default: api if
@@ -314,6 +317,29 @@ async function main(): Promise<number> {
     console.log(await greetingText());
     return 0;
   }
+  if (argv[0] === "voices") {
+    // Choosing a voice by name is guesswork; choosing by ear takes a minute.
+    // macOS ships roughly ten more Premium voices as free downloads, and there
+    // is no way to judge them without hearing the same sentence through each.
+    const all = await installedVoices();
+    const good = all.filter((v) => /\((Premium|Enhanced)\)/.test(v));
+    const list = good.length ? good : all.slice(0, 8);
+    const sample =
+      "That error is a type mismatch. You're passing a string where a number is expected.";
+    console.log(`Playing the same sentence through ${list.length} voice(s) at ${speechRate()} wpm.\n`);
+    for (const v of list) {
+      console.log(`  ${v}`);
+      await speak(`${v.replace(/\s*\((Premium|Enhanced)\)/, "")}. ${sample}`, v).catch(() => {});
+    }
+    if (!good.length) {
+      console.log("\nOnly legacy voices are installed. System Settings > Accessibility >");
+      console.log("Spoken Content > System voice > Manage Voices has better ones, free.");
+    } else {
+      console.log(`\nSet one with: {"voice": "${list[0]}"} in ~/.glance/config.json`);
+    }
+    return 0;
+  }
+
   if (argv[0] === "calibrate") {
     console.log("Measuring your room for 4 seconds — stay quiet...");
     const c = await calibrate();
@@ -445,7 +471,7 @@ async function main(): Promise<number> {
     if (mode === "both" || mode === "voice") {
       setState("speaking");
       const s0 = performance.now();
-      // Never read a checklist aloud. At the measured 2.9 words/second, six
+      // Never read a checklist aloud. At the measured 2.5 words/second, six
       // steps is over a minute of audio and unusable. The prose says what the
       // task involves; only the step you are on gets spoken.
       const toSay = started ? `${prose} ${task.spokenStep(started)}` : prose;
@@ -476,7 +502,7 @@ async function main(): Promise<number> {
         ` (in ${result.usage.input}, out ${result.usage.output}, cache r${result.usage.cacheRead}/w${result.usage.cacheCreation})` +
         (result.costUsd !== undefined ? `  $${result.costUsd.toFixed(4)}` : "") +
         `\n  answer    ${words} words` +
-        (speakMs ? `\n  spoken    ${(speakMs / 1000).toFixed(1)}s` : `\n  spoken    ~${(words / 2.9).toFixed(1)}s if read aloud (prose; lists run ~50% longer)`) +
+        (speakMs ? `\n  spoken    ${(speakMs / 1000).toFixed(1)}s` : `\n  spoken    ~${(words / 2.5).toFixed(1)}s if read aloud (prose; lists run ~75% longer)`) +
         `\n  total     ${(total / 1000).toFixed(1)}s`,
       );
     }
