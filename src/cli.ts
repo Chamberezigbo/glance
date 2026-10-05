@@ -26,6 +26,8 @@ glance — ask a question about what is on your screen
                                               cutting you off mid-sentence
   glance voices                               hear each installed voice say the
                                               same line, and pick one
+  glance say-file <script.txt> [--out a.aiff] speak a written script, or record
+                                              it as an audio file for a video
   glance apply ["job posting text"]           tailor your CV to a job on screen
                                               (or pasted), render it as a PDF,
                                               and open a Mail draft with it
@@ -419,6 +421,31 @@ async function main(): Promise<number> {
     } finally {
       setState("idle");
     }
+  }
+
+  if (argv[0] === "say-file") {
+    // Speak a written script, so narration can be generated with the same voice
+    // and pacing as everything else glance says.
+    const file = argv[1];
+    if (!file) { console.error("usage: glance say-file <script.txt> [--out voice.aiff]"); return 1; }
+    const { readFileSync } = await import("node:fs");
+    let text: string;
+    try { text = readFileSync(file, "utf8"); }
+    catch { console.error(`glance: cannot read ${file}`); return 1; }
+
+    const outIdx = argv.indexOf("--out");
+    if (outIdx !== -1 && argv[outIdx + 1]) {
+      const { forSpeech, bestVoice, speechRate } = await import("./speak.js");
+      const { execFile } = await import("node:child_process");
+      const { promisify } = await import("node:util");
+      const runIt = promisify(execFile);
+      const v = (await bestVoice()) ?? "Samantha";
+      await runIt("say", ["-v", v, "-r", String(speechRate()), "-o", argv[outIdx + 1]!, forSpeech(text)]);
+      console.log(`Wrote ${argv[outIdx + 1]} in ${v} at ${speechRate()} wpm.`);
+      return 0;
+    }
+    await speak(text);
+    return 0;
   }
 
   if (argv[0] === "voices") {
